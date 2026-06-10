@@ -249,6 +249,7 @@ require_once __DIR__ . '/includes/skills/bootstrap.php';
 require_once __DIR__ . '/includes/instructions-admin.php';
 
 \Novamira\Context\boot_context_admin();
+require_once __DIR__ . '/includes/rest-shim.php';
 
 add_action('admin_post_novamira_toggle_ai_abilities', callback: 'novamira_handle_admin_bar_toggle');
 add_action('admin_post_novamira_download_mcpb', callback: 'novamira_handle_download_mcpb');
