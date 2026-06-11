@@ -29,6 +29,154 @@ function novamira_pro_is_active(): bool
 }
 
 /**
+ * Third-party plugins and themes that Novamira Pro ships dedicated
+ * specializations and skills for. Drives the personalized upsell copy: any of
+ * these that is active on the site gets named explicitly.
+ *
+ * The `category` keys group entries for the generic fallback copy; see
+ * novamira_pro_integration_groups().
+ *
+ * @return list<array{label: string, category: string, detect: callable(): bool}>
+ */
+function novamira_pro_integration_catalog(): array
+{
+    return [
+        [
+            'label' => 'Elementor',
+            'category' => 'builder',
+            'detect' => static fn(): bool => defined('ELEMENTOR_VERSION'),
+        ],
+        ['label' => 'Bricks', 'category' => 'builder', 'detect' => static fn(): bool => defined('BRICKS_VERSION')],
+        ['label' => 'Divi', 'category' => 'builder', 'detect' => static fn(): bool => defined('ET_BUILDER_VERSION')],
+        [
+            'label' => 'Breakdance',
+            'category' => 'builder',
+            'detect' => static fn(): bool => function_exists('Breakdance\\Data\\get_global_option'),
+        ],
+        ['label' => 'WPBakery', 'category' => 'builder', 'detect' => static fn(): bool => defined('WPB_VC_VERSION')],
+        ['label' => 'Etch', 'category' => 'builder', 'detect' => static fn(): bool => class_exists('Etch\\Plugin')],
+        [
+            'label' => 'GeneratePress',
+            'category' => 'builder',
+            'detect' => static fn(): bool => function_exists('generate_get_option'),
+        ],
+        [
+            'label' => 'Kadence',
+            'category' => 'builder',
+            'detect' => static fn(): bool => class_exists('Kadence\\Theme'),
+        ],
+        [
+            'label' => 'Mosaic',
+            'category' => 'builder',
+            'detect' => static fn(): bool => class_exists('Mosaic\\Database\\MosaicDB'),
+        ],
+        ['label' => 'ACF', 'category' => 'content', 'detect' => static fn(): bool => class_exists('ACF')],
+        [
+            'label' => 'JetEngine',
+            'category' => 'content',
+            'detect' => static fn(): bool => function_exists('jet_engine'),
+        ],
+        ['label' => 'Meta Box', 'category' => 'content', 'detect' => static fn(): bool => defined('RWMB_VER')],
+        ['label' => 'Pods', 'category' => 'content', 'detect' => static fn(): bool => defined('PODS_VERSION')],
+        ['label' => 'ACPT', 'category' => 'content', 'detect' => static fn(): bool => defined('ACPT_PLUGIN_VERSION')],
+        ['label' => 'ASE', 'category' => 'content', 'detect' => static fn(): bool => defined('ASENHA_VERSION')],
+        [
+            'label' => 'WooCommerce',
+            'category' => 'commerce',
+            'detect' => static fn(): bool => class_exists('WooCommerce'),
+        ],
+        [
+            'label' => 'Code Snippets',
+            'category' => 'dev',
+            'detect' => static fn(): bool => defined('CODE_SNIPPETS_VERSION'),
+        ],
+    ];
+}
+
+/**
+ * Labels of catalog integrations whose plugin or theme is active on this site,
+ * in catalog order.
+ *
+ * @return list<string>
+ */
+function novamira_pro_active_integrations(): array
+{
+    $active = [];
+    foreach (novamira_pro_integration_catalog() as $integration) {
+        if (!$integration['detect']()) {
+            continue;
+        }
+        $active[] = $integration['label'];
+    }
+    return $active;
+}
+
+/**
+ * The full catalog rendered as grouped prose for the generic (no-match) copy,
+ * e.g. "page builders (Elementor, Bricks, …), custom fields plugins (ACF, …),
+ * WooCommerce, and Code Snippets". Built from the catalog so every integration
+ * is named in exactly one place.
+ */
+function novamira_pro_integration_groups(): string
+{
+    // Category render order and prefix. An empty prefix lists the labels bare
+    // (used for single-entry categories like WooCommerce / Code Snippets).
+    $group_labels = [
+        'builder' => __('page builders', domain: 'novamira'),
+        'content' => __('custom fields plugins', domain: 'novamira'),
+        'commerce' => '',
+        'dev' => '',
+    ];
+
+    /** @var array<string, list<string>> $labels_by_category */
+    $labels_by_category = [];
+    foreach (novamira_pro_integration_catalog() as $integration) {
+        $labels_by_category[$integration['category']][] = $integration['label'];
+    }
+
+    $segments = [];
+    foreach ($group_labels as $category => $prefix) {
+        $labels = $labels_by_category[$category] ?? [];
+        if ($labels === []) {
+            continue;
+        }
+        $list = wp_sprintf('%l', $labels);
+        $segments[] = $prefix === '' ? $list : sprintf('%s (%s)', $prefix, $list);
+    }
+
+    return wp_sprintf('%l', $segments);
+}
+
+/**
+ * One-line Pro upsell blurb, shared by the welcome notice and the Connect card.
+ * Names the integrations the user already runs; falls back to the full grouped
+ * catalog when none are detected.
+ */
+function novamira_pro_upsell_blurb(): string
+{
+    $active = novamira_pro_active_integrations();
+    if ($active === []) {
+        return sprintf(
+            /* translators: %s: grouped list of integrations, e.g. "page builders (Elementor, Bricks), WooCommerce". */
+            __(
+                'Novamira Pro adds specializations that combine abilities and skills for %s, plus memory that persists between sessions.',
+                domain: 'novamira',
+            ),
+            novamira_pro_integration_groups(),
+        );
+    }
+
+    return sprintf(
+        /* translators: %s: comma-separated list of detected plugin names, e.g. "Elementor, ACF, and WooCommerce". */
+        __(
+            'Novamira Pro adds specializations that combine abilities and skills for the tools you\'re already running (%s), plus memory that persists between sessions.',
+            domain: 'novamira',
+        ),
+        wp_sprintf('%l', $active),
+    );
+}
+
+/**
  * Append a "Get Pro" submenu entry that links out to novamira.ai/pro/.
  * Uses the $submenu global because add_submenu_page() doesn't accept external URLs.
  */
@@ -159,10 +307,7 @@ function novamira_render_pro_welcome_notice(): void
     ; ?>" style="border-left-color:#f8ca50;">
         <p style="font-size:14px;margin:10px 0;">
             <strong><?php esc_html_e('Novamira Pro is here.', domain: 'novamira'); ?></strong>
-            <?php esc_html_e(
-                'Specializations that combine abilities and skills for page builders (Elementor, Bricks) and content plugins (ACF, JetEngine, Meta Box, Pods, ACPT, ASE), with more on the way, plus memory between sessions.',
-                domain: 'novamira',
-            ); ?>
+            <?php echo esc_html(novamira_pro_upsell_blurb()); ?>
             &nbsp;
             <a href="<?php echo
                 $pro_url
@@ -205,10 +350,7 @@ function novamira_render_pro_upsell_card(): void
             </span>
         </h2>
         <p style="margin:0 0 12px;color:#50575e;">
-            <?php esc_html_e(
-                'Specializations that combine abilities and skills for page builders (Elementor, Bricks) and content plugins (ACF, JetEngine, Meta Box, Pods, ACPT, ASE), with more on the way, plus memory between sessions.',
-                domain: 'novamira',
-            ); ?>
+            <?php echo esc_html(novamira_pro_upsell_blurb()); ?>
         </p>
         <a href="<?php echo
             $pro_url
