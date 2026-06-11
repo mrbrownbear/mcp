@@ -157,6 +157,15 @@ function register_context_menu(): void
         return;
     }
 
+    // Stay out while a Novamira Pro that still manages custom instructions is
+    // active: that Pro owns the instructions UI (its "Memory & Instructions"
+    // page) until it is removed or updated to a version that hands context to
+    // the base. The base then takes over automatically — see
+    // legacy_pro_context_loaded().
+    if (legacy_pro_context_loaded()) {
+        return;
+    }
+
     add_submenu_page(
         parent_slug: 'novamira-connect',
         page_title: __('Novamira Context', domain: 'novamira'),
@@ -165,29 +174,6 @@ function register_context_menu(): void
         menu_slug: context_page_slug(),
         callback: __NAMESPACE__ . '\\render_context_page',
     );
-}
-
-function remove_legacy_context_menu(): void
-{
-    if (!legacy_pro_context_loaded()) {
-        return;
-    }
-
-    remove_submenu_page(menu_slug: 'novamira-connect', submenu_slug: 'novamira-pro-context');
-}
-
-function redirect_legacy_context_page(): void
-{
-    if (!\novamira_current_user_can_manage()) {
-        return;
-    }
-
-    if (($_GET['page'] ?? null) !== 'novamira-pro-context') {
-        return;
-    }
-
-    wp_safe_redirect(context_page_url());
-    exit();
 }
 
 /** @return array{type:string,message:string}|null */
@@ -484,6 +470,4 @@ function render_context_notice(?array $notice): void
 function boot_context_admin(): void
 {
     add_action('admin_menu', callback: __NAMESPACE__ . '\\register_context_menu', priority: 12);
-    add_action('admin_menu', callback: __NAMESPACE__ . '\\remove_legacy_context_menu', priority: 100);
-    add_action('admin_init', callback: __NAMESPACE__ . '\\redirect_legacy_context_page');
 }

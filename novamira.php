@@ -291,6 +291,13 @@ function novamira_inject_custom_instructions(mixed $instructions): mixed
         return $instructions;
     }
 
+    // Stay out while a Novamira Pro that still manages custom instructions is
+    // active: it injects its own copy (priority 5), so the base must not add a
+    // second one. The base takes over once that Pro is gone or updated.
+    if (\Novamira\Context\legacy_pro_context_loaded()) {
+        return $instructions;
+    }
+
     if (\Novamira\Context\instructions_custom_injection_suppressed()) {
         return $instructions;
     }
