@@ -50,9 +50,10 @@ function register_menu(): void
 }
 
 /**
- * Reposition the Skills submenu entry to sit immediately after Abilities
- * Hub (slug `novamira-abilities`) inside the Novamira menu group. Runs at a
- * priority higher than any caller of `add_submenu_page` for that parent.
+ * Reposition the Context and Skills submenu entries to sit immediately after
+ * Abilities Hub (slug `novamira-abilities`), in the order Context then Skills,
+ * inside the Novamira menu group. Runs at a priority higher than any caller of
+ * `add_submenu_page` for that parent.
  */
 // WordPress exposes the admin menu structure only via the $submenu superglobal;
 // there is no core API to reorder submenu entries, so writing it back is required.
@@ -66,16 +67,27 @@ function reorder_submenu(): void
 
     /** @var array<int, array<int, string>> $entries */
     $entries = $submenu['novamira-connect'];
+
+    // Pull Context and Skills out so we can re-insert them, in order, right
+    // after Abilities Hub. `add_submenu_page` only appends, so pinning a
+    // specific position requires removing then re-inserting the entries.
+    $context_entry = null;
     $skills_entry = null;
     foreach ($entries as $key => $entry) {
-        if (($entry[2] ?? null) !== PAGE_SLUG) {
+        $slug = $entry[2] ?? null;
+        if ($slug === 'novamira-context') {
+            $context_entry = $entry;
+            unset($entries[$key]);
             continue;
         }
-        $skills_entry = $entry;
-        unset($entries[$key]);
-        break;
+        if ($slug === PAGE_SLUG) {
+            $skills_entry = $entry;
+            unset($entries[$key]);
+        }
     }
-    if ($skills_entry === null) {
+
+    $pinned = array_values(array_filter([$context_entry, $skills_entry]));
+    if ($pinned === []) {
         return;
     }
 
@@ -84,12 +96,12 @@ function reorder_submenu(): void
     foreach ($entries as $entry) {
         $reordered[] = $entry;
         if (!$inserted && ($entry[2] ?? null) === 'novamira-abilities') {
-            $reordered[] = $skills_entry;
+            array_push($reordered, ...$pinned);
             $inserted = true;
         }
     }
     if (!$inserted) {
-        $reordered[] = $skills_entry;
+        array_push($reordered, ...$pinned);
     }
     $submenu['novamira-connect'] = $reordered;
 }
