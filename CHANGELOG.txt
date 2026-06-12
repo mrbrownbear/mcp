@@ -1,5 +1,5 @@
-unreleased
-* New: Custom instructions are now included in Novamira on the Context page.
+v1.7.0 - 2026/06/12
+* New: A Context page for giving AI agents stable, site-wide guidance they apply automatically on this site. If you also run Novamira Pro, this page appears once Pro is updated to 1.3.0 or later; until then Pro keeps providing custom instructions as before.
 * Minor Fixes
 
 v1.6.0 - 2026/06/01
