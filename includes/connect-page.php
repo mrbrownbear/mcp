@@ -2044,13 +2044,7 @@ function novamira_render_connect_page(): void
             <?php endif; ?>
         <?php endif; ?>
         <?php if (!$mcp_ready && novamira_get_mcp_passwords() !== []): ?>
-            <div class="novamira-connect-section">
-                <h2 class="novamira-step-heading">
-                    <span class="novamira-step-badge">2</span>
-                    <?php esc_html_e('Application Password', domain: 'novamira'); ?>
-                </h2>
-                <?php novamira_render_manage_passwords_section(context: 'disabled'); ?>
-            </div>
+            <?php novamira_render_manage_passwords_section(context: 'disabled'); ?>
         <?php endif; ?>
 
     </div>
