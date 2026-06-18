@@ -677,6 +677,132 @@ function novamira_build_npx_server(string $rest_url, string $username, string $d
     ];
 }
 
+/**
+ * Build the MCPB bundle manifest (manifest.json contents) for this site.
+ *
+ * The bundle wraps the same npx proxy used by the JSON snippets, with the
+ * connection credentials embedded directly so it installs without further
+ * prompts. The plaintext application password is therefore written into the
+ * file — callers must warn the user before offering the download.
+ *
+ * @param string $rest_url        MCP REST endpoint URL.
+ * @param string $username        WordPress username.
+ * @param string $display_password Plaintext application password.
+ * @return array<string, mixed>
+ */
+function novamira_build_mcpb_manifest(
+    string $rest_url,
+    string $username,
+    string $display_password,
+    string $mcp_name,
+): array {
+    $env = [
+        'WP_API_URL' => $rest_url,
+        'WP_API_USERNAME' => $username,
+        'WP_API_PASSWORD' => $display_password,
+    ];
+    if (novamira_likely_self_signed_https()) {
+        $env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
+    }
+
+    $site_name = trim(get_bloginfo('name'));
+    $display_name = $site_name !== '' ? 'Novamira — ' . $site_name : 'Novamira';
+
+    return [
+        'manifest_version' => '0.3',
+        'name' => $mcp_name,
+        'display_name' => $display_name,
+        'version' => NOVAMIRA_VERSION,
+        'description' => __(
+            'Full WordPress control for your AI agent. Runs real PHP, queries the database, edits files — on your dev or staging site.',
+            domain: 'novamira',
+        ),
+        'author' => ['name' => 'Novamira'],
+        'server' => [
+            // entry_point is required by the MCPB schema even though the server
+            // is launched via mcp_config (npx); the bundled stub is never run.
+            'type' => 'node',
+            'entry_point' => 'server/index.js',
+            'mcp_config' => [
+                'command' => 'npx',
+                'args' => ['-y', '@automattic/mcp-wordpress-remote@latest'],
+                'env' => $env,
+            ],
+        ],
+    ];
+}
+
+/**
+ * Stream a downloadable .mcpb bundle for Claude Desktop. Hooked on admin_post.
+ *
+ * The bundle embeds the plaintext application password, which WordPress only
+ * exposes right after creation — so the password is posted back from the
+ * connect page (where it was just shown) rather than read from storage.
+ */
+function novamira_handle_download_mcpb(): void
+{
+    if (!novamira_current_user_can_manage()) {
+        wp_die(esc_html__('You are not allowed to download this bundle.', domain: 'novamira'));
+    }
+
+    check_admin_referer('novamira_download_mcpb');
+
+    if (!class_exists('ZipArchive')) {
+        wp_die(esc_html__(
+            'Cannot build the bundle: the PHP zip extension is not available on this server. Use the JSON config instead.',
+            domain: 'novamira',
+        ));
+    }
+
+    $raw_password = $_POST['novamira_mcpb_password'] ?? '';
+    $password = is_string($raw_password) ? (string) preg_replace('/\s+/', replacement: '', subject: $raw_password) : '';
+    if ($password === '') {
+        wp_die(esc_html__('Missing application password for the bundle.', domain: 'novamira'));
+    }
+
+    $username = wp_get_current_user()->user_login;
+    $rest_url = rest_url('mcp/novamira');
+
+    $raw_name = $_POST['novamira_mcpb_name'] ?? '';
+    $mcp_name = is_string($raw_name)
+        ? (string) preg_replace('/[^a-z0-9-]/', replacement: '', subject: strtolower($raw_name))
+        : '';
+    if ($mcp_name === '' || strlen($mcp_name) > 25) {
+        $mcp_name = novamira_get_mcp_server_name_default();
+    }
+
+    $manifest = novamira_build_mcpb_manifest($rest_url, $username, $password, $mcp_name);
+    $manifest_json = (string) wp_json_encode(
+        $manifest,
+        JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+    );
+
+    $stub =
+        "// Placeholder entry point. The actual MCP server is launched via mcp_config\n"
+        . "// (npx @automattic/mcp-wordpress-remote), so this file is never executed.\n"
+        . "// It exists only to satisfy the manifest's required entry_point field.\n";
+
+    $tmp = wp_tempnam('novamira-mcpb');
+    $zip = new ZipArchive();
+    if ($tmp === '' || $zip->open($tmp, ZipArchive::OVERWRITE) !== true) {
+        wp_die(esc_html__('Could not create the bundle archive.', domain: 'novamira'));
+    }
+    $zip->addFromString('manifest.json', $manifest_json);
+    $zip->addFromString('server/index.js', $stub);
+    $zip->close();
+
+    $host = (string) wp_parse_url(home_url(), PHP_URL_HOST);
+    $filename = 'novamira-' . sanitize_file_name($host !== '' ? $host : 'site') . '.mcpb';
+
+    nocache_headers();
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Content-Length: ' . (string) filesize($tmp));
+    readfile($tmp);
+    wp_delete_file($tmp);
+    exit();
+}
+
 /** @param array<string, mixed> $npx_server */
 function novamira_build_zed_json(string $mcp_name, array $npx_server, int $opts): string
 {
@@ -947,7 +1073,7 @@ function novamira_build_standard_configs(string $mcp_servers_json, string $vscod
  */
 function novamira_render_prompt_password_notice(): void
 { ?>
-    <div class="notice notice-info inline" style="margin:0 0 12px;">
+    <div id="novamira-prompt-password-notice" class="notice notice-info inline" style="margin:0 0 12px;">
         <p style="margin:0;">
             <strong><?php esc_html_e(
                 'This prompt shares your application password with your AI agent.',
@@ -964,6 +1090,74 @@ function novamira_render_prompt_password_notice(): void
                 . '</button>',
             ); ?>
         </p>
+    </div>
+    <?php }
+
+/**
+ * Render the "download .mcpb bundle" option (shown only for the Claude Desktop
+ * tab via JS). Hidden when no real password is available, since the bundle must
+ * embed the plaintext password. Warns the user that the file carries it.
+ */
+function novamira_render_mcpb_download(string $display_password, string $mcp_name): void
+{
+    // Without the zip extension the download handler can't build the bundle, so
+    // omit the option entirely rather than send the user to an error page.
+    if (!class_exists('ZipArchive')) {
+        return;
+    }
+    $confirm_msg = wp_json_encode(__(
+        'This bundle contains your password. The .mcpb file embeds your application password in plaintext so it installs without prompts. Anyone who gets the file can control this site — don\'t share it, and delete it after installing.',
+        domain: 'novamira',
+    ));
+    $confirm_msg = $confirm_msg !== false ? $confirm_msg : '""';
+    ?>
+    <div id="novamira-mcpb-download" style="display:none; margin-top:20px; margin-bottom:4px;">
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
+            <input type="hidden" name="action" value="novamira_download_mcpb">
+            <?php wp_nonce_field('novamira_download_mcpb'); ?>
+            <input type="hidden" name="novamira_mcpb_password" value="<?php echo esc_attr($display_password); ?>">
+            <input type="hidden" name="novamira_mcpb_name" id="novamira-mcpb-name" value="<?php echo
+                esc_attr($mcp_name)
+            ; ?>">
+            <button
+                type="submit"
+                class="button button-primary"
+                style="display:inline-flex; flex-direction:column; align-items:flex-start; width:auto; padding:12px 24px; height:auto; gap:3px;"
+                onclick="return confirm(<?php echo esc_attr($confirm_msg); ?>)"
+            ><span style="font-size:15px; line-height:1.2;"><?php esc_html_e(
+                'Download .mcpb bundle',
+                domain: 'novamira',
+            ); ?></span><span style="font-size:12px; font-weight:400; opacity:0.88; line-height:1.2;"><?php esc_html_e(
+                'Open it with Claude Desktop to install in 1 click',
+                domain: 'novamira',
+            ); ?></span></button>
+        </form>
+        <p style="margin:8px 0 4px;">
+            <button
+                type="button"
+                class="button-link"
+                onclick="novamiraShowPromptForDesktop(this)"
+            ><?php esc_html_e('Use the prompt for Claude Desktop instead', domain: 'novamira'); ?></button>
+        </p>
+    </div>
+    <?php
+}
+
+/** Render the JSON config block. */
+function novamira_render_json_config_block(): void
+{ ?>
+    <div class="novamira-tab-content" style="border-radius:4px;">
+        <div class="novamira-config-block">
+            <pre id="novamira-config-code"></pre>
+            <button type="button" class="button novamira-copy-btn" onclick="novamiraCopyConfig(this)"><?php esc_html_e(
+                'Copy',
+                domain: 'novamira',
+            ); ?></button>
+        </div>
+        <div id="novamira-config-footer" style="font-size:13px; color:#666; border-top: 1px solid #c3c4c7;">
+            <div id="novamira-config-hint" style="padding: 10px 16px;"></div>
+            <div id="novamira-config-paths" style="padding: 0 16px 10px;"></div>
+        </div>
     </div>
     <?php }
 
@@ -1020,9 +1214,18 @@ function novamira_render_config_section(string $rest_url, string $username, stri
         <span class="novamira-step-badge">3</span>
         <?php esc_html_e('Connect Your AI Client', domain: 'novamira'); ?>
     </h2>
-    <p style="margin:0 0 12px;">
-        <?php esc_html_e('Copy the block below and paste it to your AI agent.', domain: 'novamira'); ?>
-    </p>
+
+    <div class="novamira-client-tabs" style="gap:8px; margin-top:16px; margin-bottom:0;">
+    <?php foreach ($clients as $key => $label): ?>
+        <button
+            type="button"
+            class="novamira-client-tab novamira-top-client-tab"
+            onclick="novamiraSetClient('<?php echo esc_js($key); ?>', this)"
+        ><?php echo esc_html($label); ?></button>
+    <?php endforeach; ?>
+    </div>
+
+    <div id="novamira-connect-content" style="display:none; margin-top:16px;">
 
     <?php if (novamira_likely_self_signed_https()): ?>
         <div class="notice notice-warning inline" style="margin:0 0 12px;">
@@ -1036,9 +1239,13 @@ function novamira_render_config_section(string $rest_url, string $username, stri
         </div>
     <?php endif; ?>
 
+    <?php if (!$password_is_placeholder) {
+        novamira_render_mcpb_download($display_password, $default_name);
+    } ?>
+
     <?php novamira_render_prompt_password_notice(); ?>
 
-    <div class="novamira-paste-block">
+    <div class="novamira-paste-block" id="novamira-paste-block" style="display:none;">
         <div class="novamira-paste-content" id="novamira-paste-content">
             <pre id="novamira-paste-text"><?php echo esc_html($paste_paragraph_initial); ?></pre>
         </div>
@@ -1068,7 +1275,7 @@ function novamira_render_config_section(string $rest_url, string $username, stri
         </div>
     </div>
 
-    <p style="margin:14px 0 4px;">
+    <p style="margin:6px 0 4px;">
         <button
             type="button"
             class="button-link"
@@ -1112,62 +1319,34 @@ function novamira_render_config_section(string $rest_url, string $username, stri
         </div>
     </div>
 
-    <p style="margin:6px 0 4px;">
+    <div id="novamira-manual-btn-wrap" style="display:none;">
+        <hr style="border:none; border-top:1px solid #dcdcde; margin:12px 0 8px;">
         <button
             type="button"
-            class="button-link"
+            class="button button-secondary"
             id="novamira-manual-toggle"
             aria-expanded="false"
             aria-controls="novamira-manual-config"
             onclick="novamiraToggleManualConfig(this)"
-        ><?php esc_html_e('Need the JSON config for a specific client?', domain: 'novamira'); ?></button>
-    </p>
-
-    <div id="novamira-manual-config" hidden style="display:none;">
-        <p class="description" style="margin:0 0 12px;">
-            <?php esc_html_e(
-                'Select your AI client to copy the JSON snippet for its config file.',
-                domain: 'novamira',
-            ); ?>
-        </p>
-
-        <div class="novamira-client-tabs">
-        <?php foreach ($clients as $key => $label): ?>
-            <button
-                type="button"
-                class="novamira-client-tab novamira-manual-client-tab<?php echo
-                    $key === 'claude-code' ? ' active' : ''
-                ; ?>"
-                onclick="novamiraSetClient('<?php echo esc_js($key); ?>', this)"
-            ><?php echo esc_html($label); ?></button>
-        <?php endforeach; ?>
-        </div>
-
-        <div class="novamira-tab-content" style="border-radius:4px;">
-            <div class="novamira-config-block">
-                <pre id="novamira-config-code"></pre>
-                <button type="button" class="button novamira-copy-btn" onclick="novamiraCopyConfig(this)"><?php esc_html_e(
-                    'Copy',
-                    domain: 'novamira',
-                ); ?></button>
-            </div>
-            <div id="novamira-config-footer" style="font-size:13px; color:#666; border-top: 1px solid #c3c4c7;">
-                <div id="novamira-config-hint" style="padding: 10px 16px;"></div>
-                <div id="novamira-config-paths" style="padding: 0 16px 10px;"></div>
-            </div>
-        </div>
+        ><?php esc_html_e('Manual setup for your AI client', domain: 'novamira'); ?></button>
     </div>
 
-    <p style="margin:6px 0 4px;">
-        <button
-            type="button"
-            class="button-link"
-            id="novamira-npxless-toggle"
-            aria-expanded="false"
-            aria-controls="novamira-npxless-config"
-            onclick="novamiraToggleNpxlessConfig(this)"
-        ><?php esc_html_e('Configs above not working? Try this npx-free alternative.', domain: 'novamira'); ?></button>
-    </p>
+    <div id="novamira-manual-config" hidden style="display:none; margin-top:14px;">
+        <?php novamira_render_json_config_block(); ?>
+        <p style="margin:10px 0 4px;">
+            <button
+                type="button"
+                class="button-link"
+                id="novamira-npxless-toggle"
+                aria-expanded="false"
+                aria-controls="novamira-npxless-config"
+                onclick="novamiraToggleNpxlessConfig(this)"
+            ><?php esc_html_e(
+                'Configs above not working? Try this npx-free alternative.',
+                domain: 'novamira',
+            ); ?></button>
+        </p>
+    </div>
 
     <div id="novamira-npxless-config" hidden style="display:none;">
         <p class="description" style="margin:0 0 12px;">
@@ -1207,10 +1386,13 @@ function novamira_render_config_section(string $rest_url, string $username, stri
         </div>
     </div>
 
+    </div><!-- #novamira-connect-content -->
+
     <script>
     (function () {
         var configs = <?php echo $configs_json; ?>;
-        var client = 'claude-code';
+        var clientLabels = <?php echo wp_json_encode($clients); ?>;
+        var client = '';
         var defaultName = <?php echo wp_json_encode($default_name); ?>;
         var pasteTemplate = <?php echo wp_json_encode($paste_paragraph_template); ?>;
         var mcpName = <?php echo wp_json_encode($default_name); ?>;
@@ -1249,6 +1431,7 @@ function novamira_render_config_section(string $rest_url, string $username, stri
         }
 
         function renderConfig() {
+            if (!client) { return; }
             var cfg = configs[client];
             if (!cfg) { return; }
 
@@ -1262,6 +1445,26 @@ function novamira_render_config_section(string $rest_url, string $username, stri
                 );
             }
             document.getElementById('novamira-config-hint').innerHTML = cfg.hint;
+
+            var isDesktop = client === 'claude-desktop';
+            var mcpbEl = document.getElementById('novamira-mcpb-download');
+            if (mcpbEl) { mcpbEl.style.display = isDesktop ? '' : 'none'; }
+            var pasteBlock = document.getElementById('novamira-paste-block');
+            if (pasteBlock) { pasteBlock.style.display = isDesktop ? 'none' : ''; }
+            var pwNotice = document.getElementById('novamira-prompt-password-notice');
+            if (pwNotice) { pwNotice.style.display = isDesktop ? 'none' : ''; }
+            var manualBtnWrap = document.getElementById('novamira-manual-btn-wrap');
+            if (manualBtnWrap) { manualBtnWrap.style.display = ''; }
+            var npxlessToggle = document.getElementById('novamira-npxless-toggle');
+            if (npxlessToggle) {
+                var showNpxless = client === 'claude-code' || client === 'codex';
+                npxlessToggle.parentElement.style.display = showNpxless ? '' : 'none';
+                if (!showNpxless) {
+                    var npxlessConfig = document.getElementById('novamira-npxless-config');
+                    if (npxlessConfig) { npxlessConfig.style.display = 'none'; npxlessConfig.hidden = true; }
+                    npxlessToggle.setAttribute('aria-expanded', 'false');
+                }
+            }
 
             var pathsEl = document.getElementById('novamira-config-paths');
             var keys = Object.keys(cfg.paths);
@@ -1281,9 +1484,26 @@ function novamira_render_config_section(string $rest_url, string $username, stri
 
         window.novamiraSetClient = function (key, btn) {
             client = key;
-            document.querySelectorAll('.novamira-manual-client-tab').forEach(function (t) { t.classList.remove('active'); });
+            document.querySelectorAll('.novamira-top-client-tab').forEach(function (t) { t.classList.remove('active'); });
             btn.classList.add('active');
+            var content = document.getElementById('novamira-connect-content');
+            if (content) { content.style.display = ''; }
+            var manualToggle = document.getElementById('novamira-manual-toggle');
+            if (manualToggle && clientLabels[key]) {
+                manualToggle.textContent = <?php echo
+                    wp_json_encode(__('Manual setup for', domain: 'novamira'))
+                ; ?> + ' ' + clientLabels[key];
+            }
             renderConfig();
+        };
+
+        window.novamiraShowPromptForDesktop = function (btn) {
+            var mcpbEl = document.getElementById('novamira-mcpb-download');
+            if (mcpbEl) { mcpbEl.style.display = 'none'; }
+            var pasteBlock = document.getElementById('novamira-paste-block');
+            if (pasteBlock) { pasteBlock.style.display = ''; }
+            var pwNotice = document.getElementById('novamira-prompt-password-notice');
+            if (pwNotice) { pwNotice.style.display = ''; }
         };
 
         window.novamiraSetNpxlessClient = function (key, btn) {
@@ -1305,6 +1525,8 @@ function novamira_render_config_section(string $rest_url, string $username, stri
 
         window.novamiraUpdateName = function (value) {
             mcpName = value.trim() || defaultName;
+            var nameField = document.getElementById('novamira-mcpb-name');
+            if (nameField) { nameField.value = mcpName; }
             updateNameWarning(value);
             render();
         };
@@ -1336,6 +1558,7 @@ function novamira_render_config_section(string $rest_url, string $username, stri
                 panel.style.display = '';
                 panel.hidden = false;
                 btn.setAttribute('aria-expanded', 'true');
+                panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
         };
 
@@ -1613,6 +1836,9 @@ function novamira_render_connect_page(): void
             padding: 4px 10px;
             font-size: 12px;
             cursor: pointer;
+            background: #f6f7f7 !important;
+            border-color: #8c8f94 !important;
+            color: #1d2327 !important;
         }
         .novamira-password-box {
             display: flex;
@@ -1638,12 +1864,17 @@ function novamira_render_connect_page(): void
             border-radius: 20px;
             cursor: pointer;
             font-size: 13px;
+            color: #1d2327;
         }
         .novamira-client-tab.active {
-            background: #2271b1;
+            background: var(--wp-admin-theme-color, #2271b1);
             color: #fff;
-            border-color: #2271b1;
+            border-color: var(--wp-admin-theme-color, #2271b1);
             font-weight: 600;
+        }
+        .novamira-top-client-tab {
+            padding: 9px 20px;
+            font-size: 14px;
         }
         .novamira-tab-content { border: 1px solid #c3c4c7; border-radius: 4px; }
         .novamira-revoke-btn { color: #d63638 !important; border-color: #d63638 !important; }
