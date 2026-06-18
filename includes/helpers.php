@@ -521,6 +521,15 @@ function novamira_looks_like_production(): bool
         'elementor.cloud',
         'lndo.site',
         'ddev.site',
+        'instawp.co',
+        'instawp.link',
+        'instawp.xyz',
+        'tastewp.com',
+        'mystagingwebsite.com',
+        'wpcomstaging.com',
+        'convesio.cloud',
+        '10web.io',
+        'plesk.page',
     ]);
 
     foreach ($non_prod_host_suffixes as $suffix) {
