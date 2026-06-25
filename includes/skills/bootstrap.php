@@ -50,7 +50,7 @@ add_filter('novamira_discover_abilities_instructions', __NAMESPACE__ . '\\Catalo
 // MCP prompt-mode skill abilities and the canonical skill-get must register
 // after any pre-existing owner so we can save a reference and delegate when
 // our lookup misses (priority 999). See abilities/skill-get.php for details.
-add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\register_categories', priority: 5);
+add_action('wp_abilities_api_categories_init', __NAMESPACE__ . '\\Abilities\\register_categories', priority: 5);
 add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Prompts\\register_dynamic_abilities', priority: 500);
 add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\SkillGet\\register', priority: 999);
 add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\SkillWrite\\register', priority: 999);

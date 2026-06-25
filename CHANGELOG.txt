@@ -2,6 +2,7 @@ v1.7.1 - 2026/06/18
 * New: Claude Desktop gets a one-click .mcpb bundle download that installs the MCP server without editing any config files.
 * New: The Connect page now asks you to pick your AI client first; the connection options (prompt, bundle, or manual JSON) appear only after that choice, tailored to the selected client.
 * Tweak: When AI Abilities are disabled, existing application passwords are listed below step 1 without the step 2 framing, so the setup flow is clearer.
+* Fix: WordPress 6.9 ability discovery no longer emits PHP notices for missing or late-registered ability categories.
 * Minor Fixes
 
 v1.7.0 - 2026/06/12

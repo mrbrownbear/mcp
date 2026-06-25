@@ -17,19 +17,14 @@ if (!defined('ABSPATH')) {
  */
 function register_categories(): void
 {
-    if (!function_exists('wp_register_ability_category')) {
+    if (!function_exists('wp_register_ability_category') || wp_has_ability_category('skill')) {
         return;
     }
-    try {
-        wp_register_ability_category('skill', [
-            'label' => __('Skills', domain: 'novamira'),
-            'description' => __('Manage and load Novamira skills.', domain: 'novamira'),
-        ]);
 
-        // @mago-expect lint:no-empty-catch-clause
-    } catch (\Throwable) {
-        // Already registered by another plugin — fine.
-    }
+    wp_register_ability_category('skill', [
+        'label' => __('Skills', domain: 'novamira'),
+        'description' => __('Manage and load Novamira skills.', domain: 'novamira'),
+    ]);
 }
 
 namespace Novamira\Skills\Abilities\SkillGet;
@@ -65,7 +60,7 @@ function register(): void
         return;
     }
 
-    $previous = wp_get_ability('novamira/skill-get');
+    $previous = wp_has_ability('novamira/skill-get') ? wp_get_ability('novamira/skill-get') : null;
     if ($previous instanceof \WP_Ability) {
         wp_unregister_ability('novamira/skill-get');
     }

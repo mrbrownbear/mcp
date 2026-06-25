@@ -19,12 +19,14 @@ if (!defined('ABSPATH')) {
     exit();
 }
 
-$existing_ability = wp_get_ability('mcp-adapter/discover-abilities');
-if ($existing_ability !== null) {
+$novamira_existing_ability = wp_has_ability('mcp-adapter/discover-abilities')
+    ? wp_get_ability('mcp-adapter/discover-abilities')
+    : null;
+if ($novamira_existing_ability !== null) {
     wp_unregister_ability('mcp-adapter/discover-abilities');
 }
 
-if (wp_get_ability('mcp-adapter/discover-abilities') !== null) {
+if (wp_has_ability('mcp-adapter/discover-abilities')) {
     return;
 }
 
