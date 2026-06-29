@@ -48,12 +48,9 @@ if (!defined('ABSPATH')) {
  * (`novamira_skill_lookup_sources`), the fallback path stops firing
  * naturally. Keeping the wrapper costs nothing.
  *
- * High Halstead effort is inherent: this is one declarative
- * `wp_register_ability()` call carrying the full input/output JSON schema
- * plus the execute closure. Splitting it would scatter a single
- * registration with no readability gain.
+ * This intentionally keeps the full input/output JSON schema next to the
+ * `wp_register_ability()` call so the registration remains easy to audit.
  */
-// @mago-expect lint:halstead
 function register(): void
 {
     if (!function_exists('wp_register_ability')) {
@@ -96,47 +93,7 @@ function register(): void
             ],
             'required' => ['found'],
         ],
-        'execute_callback' => static function (array $input) use ($previous): array|WP_Error {
-            $agent_slug = normalize_requested_slug((string) ($input['slug'] ?? ''));
-            if ($agent_slug === '') {
-                return new WP_Error('missing_slug', __('A slug is required.', domain: 'novamira'));
-            }
-
-            $skill = Sources\find($agent_slug);
-            if ($skill !== null) {
-                $enable_prompt = boolval($skill['enable_prompt'] ?? false);
-                $enable_agentic = boolval($skill['enable_agentic'] ?? true);
-                return [
-                    'found' => true,
-                    'slug' => (string) $skill['slug'],
-                    'name' => (string) ($skill['name'] ?? $skill['slug']),
-                    'description' => (string) ($skill['description'] ?? ''),
-                    'content' => Parser\render_skill_md([
-                        'slug' => (string) $skill['slug'],
-                        'description' => (string) ($skill['description'] ?? ''),
-                        'content' => (string) ($skill['content'] ?? ''),
-                        'enable_prompt' => $enable_prompt,
-                        'enable_agentic' => $enable_agentic,
-                    ]),
-                    'enable_prompt' => $enable_prompt,
-                    'enable_agentic' => $enable_agentic,
-                    'source' => (string) ($skill['source'] ?? 'user-cpt'),
-                ];
-            }
-
-            // Fallback: an ability owner from before us may have it.
-            // Generic — works for any plugin that previously registered
-            // `novamira/skill-get`.
-            if ($previous instanceof \WP_Ability) {
-                /** @var mixed $forwarded */
-                $forwarded = $previous->execute(['slug' => $agent_slug]);
-                if (!is_wp_error($forwarded)) {
-                    return is_array($forwarded) ? $forwarded : ['found' => false];
-                }
-            }
-
-            return ['found' => false];
-        },
+        'execute_callback' => static fn(array $input): array|WP_Error => execute_skill_get($input, $previous),
         'permission_callback' => 'novamira_permission_callback',
         'meta' => [
             'annotations' => [
@@ -147,6 +104,66 @@ function register(): void
             'mcp' => ['public' => true, 'type' => 'tool'],
         ],
     ]);
+}
+
+function execute_skill_get(array $input, ?\WP_Ability $previous): array|WP_Error
+{
+    $agent_slug = normalize_requested_slug((string) ($input['slug'] ?? ''));
+    if ($agent_slug === '') {
+        return new WP_Error('missing_slug', __('A slug is required.', domain: 'novamira'));
+    }
+
+    $skill = Sources\find($agent_slug);
+    if ($skill !== null) {
+        return format_skill_response($skill);
+    }
+
+    return forward_to_previous_skill_get($agent_slug, $previous);
+}
+
+/**
+ * @param array<string, mixed> $skill
+ * @return array<string, mixed>
+ */
+function format_skill_response(array $skill): array
+{
+    $enable_prompt = boolval($skill['enable_prompt'] ?? false);
+    $enable_agentic = boolval($skill['enable_agentic'] ?? true);
+
+    return [
+        'found' => true,
+        'slug' => (string) $skill['slug'],
+        'name' => (string) ($skill['name'] ?? $skill['slug']),
+        'description' => (string) ($skill['description'] ?? ''),
+        'content' => Parser\render_skill_md([
+            'slug' => (string) $skill['slug'],
+            'description' => (string) ($skill['description'] ?? ''),
+            'content' => (string) ($skill['content'] ?? ''),
+            'enable_prompt' => $enable_prompt,
+            'enable_agentic' => $enable_agentic,
+        ]),
+        'enable_prompt' => $enable_prompt,
+        'enable_agentic' => $enable_agentic,
+        'source' => (string) ($skill['source'] ?? 'user-cpt'),
+    ];
+}
+
+/**
+ * @return array<array-key, mixed>
+ */
+function forward_to_previous_skill_get(string $agent_slug, ?\WP_Ability $previous): array
+{
+    if (!$previous instanceof \WP_Ability) {
+        return ['found' => false];
+    }
+
+    /** @var mixed $forwarded */
+    $forwarded = $previous->execute(['slug' => $agent_slug]);
+    if (is_wp_error($forwarded)) {
+        return ['found' => false];
+    }
+
+    return is_array($forwarded) ? $forwarded : ['found' => false];
 }
 
 function normalize_requested_slug(string $slug): string

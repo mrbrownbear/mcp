@@ -404,28 +404,39 @@ function novamira_is_enabled()
  */
 function novamira_looks_like_production(): bool
 {
-    $host = (string) wp_parse_url(home_url(), PHP_URL_HOST);
-    $host = strtolower($host);
+    $host = novamira_normalized_home_host();
     if ($host === '') {
         return true;
     }
 
+    if (!str_contains($host, '.') || filter_var($host, FILTER_VALIDATE_IP) !== false) {
+        return false;
+    }
+
+    return (
+        !novamira_host_has_non_production_tld($host)
+        && !novamira_host_has_non_production_subdomain_segment($host)
+        && !novamira_host_has_non_production_keyword($host)
+        && !novamira_host_has_non_production_suffix($host)
+        && !novamira_wp_environment_is_non_production()
+    );
+}
+
+function novamira_normalized_home_host(): string
+{
+    $host = strtolower((string) wp_parse_url(home_url(), PHP_URL_HOST));
+
     // Strip an eventual port suffix.
     $colon_pos = strpos(haystack: $host, needle: ':');
-    if ($colon_pos !== false) {
-        $host = substr($host, offset: 0, length: $colon_pos);
+    if ($colon_pos === false) {
+        return $host;
     }
 
-    // No dot at all (e.g. "localhost", "wordpress") → not production.
-    if (!str_contains($host, '.')) {
-        return false;
-    }
+    return substr($host, offset: 0, length: $colon_pos);
+}
 
-    // IP literals → not production.
-    if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
-        return false;
-    }
-
+function novamira_host_has_non_production_tld(string $host): bool
+{
     $segments = explode('.', $host);
     $tld = end($segments);
 
@@ -440,10 +451,11 @@ function novamira_looks_like_production(): bool
         'backup',
     ]);
 
-    if (in_array($tld, $non_prod_tlds, strict: true)) {
-        return false;
-    }
+    return in_array($tld, $non_prod_tlds, strict: true);
+}
 
+function novamira_host_has_non_production_subdomain_segment(string $host): bool
+{
     /** @var array<int, string> $non_prod_subdomain_segments */
     $non_prod_subdomain_segments = apply_filters('novamira_non_production_subdomain_segments', [
         'dev',
@@ -467,12 +479,17 @@ function novamira_looks_like_production(): bool
         'mirror',
     ]);
 
-    foreach ($segments as $segment) {
+    foreach (explode('.', $host) as $segment) {
         if (in_array($segment, $non_prod_subdomain_segments, strict: true)) {
-            return false;
+            return true;
         }
     }
 
+    return false;
+}
+
+function novamira_host_has_non_production_keyword(string $host): bool
+{
     /** @var array<int, string> $non_prod_keyword_regex_words */
     $non_prod_keyword_regex_words = apply_filters('novamira_non_production_keyword_words', [
         'test',
@@ -496,10 +513,12 @@ function novamira_looks_like_production(): bool
         str: $w,
         delimiter: '/',
     ), $non_prod_keyword_regex_words));
-    if ($alternation !== '' && preg_match('/\b(?:' . $alternation . ')[0-9]*\b/i', $host) === 1) {
-        return false;
-    }
 
+    return $alternation !== '' && preg_match('/\b(?:' . $alternation . ')[0-9]*\b/i', $host) === 1;
+}
+
+function novamira_host_has_non_production_suffix(string $host): bool
+{
     /** @var array<int, string> $non_prod_host_suffixes */
     $non_prod_host_suffixes = apply_filters('novamira_production_host_patterns', [
         'wpengine.com',
@@ -534,18 +553,20 @@ function novamira_looks_like_production(): bool
 
     foreach ($non_prod_host_suffixes as $suffix) {
         if ($suffix !== '' && str_ends_with($host, $suffix)) {
-            return false;
+            return true;
         }
     }
 
-    if (function_exists('wp_get_environment_type')) {
-        $env = wp_get_environment_type();
-        if (in_array($env, ['staging', 'development', 'local'], strict: true)) {
-            return false;
-        }
+    return false;
+}
+
+function novamira_wp_environment_is_non_production(): bool
+{
+    if (!function_exists('wp_get_environment_type')) {
+        return false;
     }
 
-    return true;
+    return in_array(wp_get_environment_type(), ['staging', 'development', 'local'], strict: true);
 }
 
 /**
