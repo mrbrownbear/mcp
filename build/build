@@ -15,10 +15,16 @@ VERSION="$1"
 mkdir -p "$BUILD_DIR"
 cd "$BASEDIR"
 
+cd novamira-visual
+bun install --frozen-lockfile
+bun run build
+cd "$BASEDIR"
+
 GIT_LS_FILES=$(mktemp)
 git ls-files >"$GIT_LS_FILES"
 rsync -rl --files-from="$GIT_LS_FILES" --exclude-from=build/build-ignore ./ "$BUILD_DIR/"
 rm "$GIT_LS_FILES"
+rsync -rl --include='*.js' --exclude='*' novamira-visual/dist/ "$BUILD_DIR/novamira-visual/dist/"
 
 # Install production deps and copy vendor into build
 composer install --no-dev --optimize-autoloader --no-interaction

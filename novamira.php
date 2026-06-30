@@ -9,7 +9,7 @@ declare(strict_types=1);
  * Plugin Name: Novamira
  * Plugin URI: https://www.novamira.ai
  * Description: MCP server that gives AI agents full access to WordPress through PHP execution and filesystem operations. For development and staging environments only.
- * Version: 1.7.1
+ * Version: 1.8.0
  * Requires at least: 6.9
  * Requires PHP: 8.0
  * Author: Dynamic.ooo
@@ -37,7 +37,7 @@ if (!defined('ABSPATH')) {
     exit();
 }
 
-define(constant_name: 'NOVAMIRA_VERSION', value: '1.7.1');
+define(constant_name: 'NOVAMIRA_VERSION', value: '1.8.0');
 define(constant_name: 'NOVAMIRA_MAX_EXECUTION_TIME', value: 30);
 define('NOVAMIRA_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('NOVAMIRA_SANDBOX_DIR', WP_CONTENT_DIR . '/novamira-sandbox/');
@@ -250,6 +250,7 @@ require_once __DIR__ . '/includes/instructions-admin.php';
 
 \Novamira\Context\boot_context_admin();
 require_once __DIR__ . '/includes/rest-shim.php';
+require_once __DIR__ . '/novamira-visual/bootstrap.php';
 
 add_action('admin_post_novamira_toggle_ai_abilities', callback: 'novamira_handle_admin_bar_toggle');
 add_action('admin_post_novamira_download_mcpb', callback: 'novamira_handle_download_mcpb');

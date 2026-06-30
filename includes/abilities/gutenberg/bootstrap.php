@@ -123,6 +123,56 @@ const FINALIZER_RUNTIME_TTL_SECONDS = 120;
 add_action('init', __NAMESPACE__ . '\\register_storage');
 add_action('init', __NAMESPACE__ . '\\schedule_cleanup');
 add_action('novamira_gutenberg_cleanup', __NAMESPACE__ . '\\cleanup_queue');
+add_filter('novamira_visual_excluded_backend_abilities', __NAMESPACE__ . '\\exclude_from_visual_backend');
+add_filter('novamira_visual_excluded_backend_skills', __NAMESPACE__ . '\\exclude_skill_from_visual_backend');
+
+/**
+ * Keep the headless Gutenberg authoring skill out of Novamira Visual. In Visual
+ * the agent builds Gutenberg pages live through the bundled gutenberg-build-page
+ * skill and the editor page tools, so the headless finalize-flow skill would
+ * only mislead it. Pro applies this list while building the Visual discovery
+ * instructions.
+ *
+ * @param mixed $slugs
+ * @return list<string>
+ */
+function exclude_skill_from_visual_backend(mixed $slugs): array
+{
+    /** @var list<string> $slugs */
+    $slugs = is_array($slugs) ? $slugs : [];
+    $slugs[] = 'gutenberg-edit-content';
+
+    return $slugs;
+}
+
+/**
+ * Keep the headless Gutenberg flow (pending changes, batch finalization,
+ * write/get-content) out of Novamira Visual's backend tool discovery. In Visual
+ * the agent edits Gutenberg live in the editor through the workspace page tools,
+ * so the finalize flow is redundant and, being prominent, pulls the agent off
+ * the live path. The filter only runs during Visual discovery; headless Novamira
+ * keeps every Gutenberg ability untouched.
+ *
+ * @param mixed $excluded
+ * @return array<string, bool>
+ */
+function exclude_from_visual_backend(mixed $excluded): array
+{
+    /** @var array<string, bool> $excluded */
+    $excluded = is_array($excluded) ? $excluded : [];
+    if (!function_exists('wp_get_abilities')) {
+        return $excluded;
+    }
+
+    foreach (\wp_get_abilities() as $ability) {
+        $name = $ability->get_name();
+        if (str_starts_with($name, 'novamira/gutenberg-')) {
+            $excluded[$name] = true;
+        }
+    }
+
+    return $excluded;
+}
 
 function register_storage(): void
 {
