@@ -1,3 +1,7 @@
+v1.8.1 - 2026/07/03
+* Tweak: The Claude Desktop .mcpb download button is disabled because it is not currently working with newer Claude Desktop versions; manual configuration is now shown by default.
+* Minor Fixes
+
 v1.8.0 - 2026/06/30
 * New: Novamira Visual, an experimental browser workspace where you watch your AI agent work on WordPress in real time. Instead of working out of sight, the agent opens your pages and the block editor in front of you. For development and staging sites. Elementor and Bricks support comes with Novamira Pro.
 * Minor Fixes
