@@ -727,7 +727,7 @@ class AgentWorkspace {
 		body.hidden = true;
 		section.appendChild(body);
 
-		// .mcpb bundle (Claude Desktop): one-click install, no credentials inside.
+		// .mcpb bundle (Claude Desktop): currently disabled due to newer Claude Desktop compatibility.
 		const bundle = document.createElement("div");
 		bundle.className = "novamira-visual-bundle";
 		bundle.hidden = true;
@@ -738,12 +738,14 @@ class AgentWorkspace {
 		const cardTitle = document.createElement("b");
 		cardTitle.textContent = "Download .mcpb bundle";
 		const cardSub = document.createElement("span");
-		cardSub.textContent = "Open it with Claude Desktop to install in one click.";
+		cardSub.textContent = "Currently not working with newer Claude Desktop versions.";
 		cardText.append(cardTitle, cardSub);
-		const cardBtn = document.createElement("a");
-		cardBtn.className = "button button-primary";
+		const cardBtn = document.createElement("button");
+		cardBtn.type = "button";
+		cardBtn.className = "button button-secondary";
 		cardBtn.textContent = "Download .mcpb";
-		cardBtn.href = workspaceData.mcpbUrl;
+		cardBtn.disabled = true;
+		cardBtn.setAttribute("aria-disabled", "true");
 		card.append(cardText, cardBtn);
 		bundle.append(card);
 		body.appendChild(bundle);
@@ -769,7 +771,7 @@ class AgentWorkspace {
 		const jsonToggle = document.createElement("button");
 		jsonToggle.type = "button";
 		jsonToggle.className = "novamira-visual-configure-toggle";
-		jsonToggle.textContent = "Or add the config manually";
+		jsonToggle.textContent = "Manual configuration";
 		const jsonDetail = document.createElement("div");
 		jsonDetail.hidden = true;
 		const jsonPre = document.createElement("pre");
@@ -800,7 +802,7 @@ class AgentWorkspace {
 				promptWrap.hidden = client.desktop;
 				jsonPre.textContent = client.code;
 				jsonPathName.textContent = client.path;
-				jsonDetail.hidden = true;
+				jsonDetail.hidden = !client.desktop;
 				onSelect();
 			});
 			tabs.appendChild(tab);
