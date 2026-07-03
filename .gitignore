@@ -31,3 +31,4 @@ refs
 .claude
 .playwright-mcp/
 includes/skills/dev-mock.php
+node_modules/
