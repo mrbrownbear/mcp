@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 wp_register_ability('novamira/write-file', [
     'label' => __('Write File', domain: 'novamira'),
     'description' => __(
-        'Writes content to a file on the server filesystem. PHP files (*.php) and PHP execution control files can ONLY be written to the sandbox directory (wp-content/novamira-sandbox/). Other non-PHP files can intentionally go anywhere under ABSPATH. The sandbox is for loading and crash recovery of generated PHP, not security isolation for all filesystem writes. Supports both UTF-8 text and base64-encoded binary content. Automatically creates parent directories when needed.',
+        'Writes small UTF-8 text content to a file on the server filesystem. PHP files (*.php) and PHP execution control files can ONLY be written to the sandbox directory (wp-content/novamira-sandbox/). Other non-PHP files can intentionally go anywhere under ABSPATH. The sandbox is for loading and crash recovery of generated PHP, not security isolation for all filesystem writes. Does not accept base64 or binary uploads; use novamira/create-upload-link for ZIPs, plugins, themes, media, binary files, or other large uploads. Automatically creates parent directories when needed.',
         domain: 'novamira',
     ),
     'category' => 'filesystem',
@@ -30,12 +30,12 @@ wp_register_ability('novamira/write-file', [
             ],
             'content' => [
                 'type' => 'string',
-                'description' => 'Content to write to the file.',
+                'description' => 'Small UTF-8 text content to write to the file. Do not pass base64 or binary data; use novamira/create-upload-link for binary or large uploads.',
             ],
             'encoding' => [
                 'type' => 'string',
-                'description' => 'Content encoding.',
-                'enum' => ['utf-8', 'base64'],
+                'description' => 'Content encoding. Only UTF-8 text is supported; base64 and binary uploads are rejected. Use novamira/create-upload-link for those.',
+                'enum' => ['utf-8'],
                 'default' => 'utf-8',
             ],
             'mode' => [
@@ -81,6 +81,8 @@ wp_register_ability('novamira/write-file', [
                 '- PHP files (*.php) and PHP execution control files can ONLY be written to: wp-content/novamira-sandbox/',
                 '- Use a path like "wp-content/novamira-sandbox/my-feature.php"',
                 '- Other non-PHP files can intentionally be written anywhere under ABSPATH.',
+                '- Use this ability only for small UTF-8 text files. Do NOT use base64 here.',
+                '- For ZIPs, plugins, themes, media, binary files, or other large uploads, use novamira/create-upload-link instead.',
                 '- The sandbox is not security isolation for all filesystem writes; it is for generated PHP loading and crash recovery.',
                 '- Sandbox plugins are loaded by a mu-plugin loader on every request.',
                 '',
@@ -104,18 +106,20 @@ wp_register_ability('novamira/write-file', [
  * Decode write content based on encoding.
  *
  * @param string $content  Raw content string.
- * @param string $encoding Encoding type ('utf-8' or 'base64').
- * @return string|WP_Error Decoded content or WP_Error on failure.
+ * @param string $encoding Encoding type. Only 'utf-8' is supported.
+ * @return string|WP_Error Content or WP_Error on unsupported encoding.
  */
 function novamira_decode_write_content(string $content, string $encoding): string|WP_Error
 {
     if ($encoding === 'base64') {
-        $decoded = base64_decode(string: $content, strict: true);
-        if ($decoded === false) {
-            return new WP_Error('invalid_base64', 'The provided content is not valid base64.');
-        }
+        return new WP_Error(
+            'base64_not_supported',
+            'novamira/write-file does not accept base64 or binary content. Use novamira/create-upload-link for ZIPs, plugins, themes, media, binary files, or other large uploads.',
+        );
+    }
 
-        return $decoded;
+    if ($encoding !== 'utf-8') {
+        return new WP_Error('unsupported_encoding', 'novamira/write-file only accepts UTF-8 text content.');
     }
 
     return $content;

@@ -1,3 +1,5 @@
+* Tweak: The write-file ability now rejects base64 and binary payloads, and points agents to the upload-link ability for large uploads.
+
 v1.8.1 - 2026/07/03
 * Fix: The Claude Desktop one-click bundle (.mcpb) is not connecting on recent Claude Desktop versions, so manual configuration is shown by default for now while we look for a solution.
 

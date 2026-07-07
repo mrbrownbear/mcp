@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 wp_register_ability('novamira/create-upload-link', [
     'label' => __('Create Upload Link', domain: 'novamira'),
     'description' => __(
-        'Creates a temporary upload endpoint and header-only bearer token that external tools can use to upload one file into the WordPress filesystem. Useful when the agent has a local ZIP, plugin, theme, or media file and wants to upload it with curl or another external tool. The endpoint accepts raw PUT/POST bodies and multipart/form-data with a field named "file".',
+        'Creates a temporary upload endpoint and header-only bearer token that external tools can use to upload one file into the WordPress filesystem. Use this instead of novamira/write-file for ZIPs, plugins, themes, media, binary files, base64-encoded payloads, or any large upload. The endpoint accepts raw PUT/POST bodies and multipart/form-data with a field named "file".',
         domain: 'novamira',
     ),
     'category' => 'filesystem',
@@ -86,7 +86,7 @@ wp_register_ability('novamira/create-upload-link', [
         'mcp' => ['public' => true],
         'annotations' => [
             'instructions' => implode("\n", [
-                'Use this when a file is too large or inconvenient to send through the MCP JSON transport.',
+                'Use this instead of novamira/write-file for ZIPs, plugins, themes, media, binary files, base64-encoded payloads, or any large upload.',
                 'Recommended curl form: curl -X PUT -H "$token_header: $upload_token" --data-binary @/path/to/local-file "$upload_url"',
                 'Multipart form is also accepted: curl -H "$token_header: $upload_token" -F file=@/path/to/local-file "$upload_url"',
                 'PHP files (*.php) and PHP execution control files can ONLY be uploaded to wp-content/novamira-sandbox/.',
