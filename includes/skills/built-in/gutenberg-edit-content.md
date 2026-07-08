@@ -7,20 +7,27 @@ description: Create or edit WordPress content in the native Gutenberg/block edit
 
 Use this playbook for native WordPress block editor work. Gutenberg static
 blocks need the browser JavaScript serializer before queued content becomes
-live, so the Novamira Block Editor Queue admin page is part of the workflow.
+live, so a Novamira browser finalizer runtime must be online. In Dashboard
+Agent that runtime is embedded in the Novamira Chat page; external MCP
+clients use the standalone Block Editor Queue admin page.
 
 ## Start Here
 
 1. Call `novamira/gutenberg-get-finalizer-runtime`.
-2. If `finalizer_runtime.online` is false, ask the user to open
-   `finalizer_runtime.dashboard_url` in `wp-admin` and keep that page open
-   while you work. Continue planning and reading content, but do not assume a
-   queued static/native block batch can finalize until the runtime is online
-   and able to process queued changes.
-3. If `finalizer_runtime.online` is true, tell the user to keep the queue
-   page open. If later batch responses show `online=false`, the page was
-   closed, logged out, or lost its session; ask the user to reopen it.
-4. Use `finalizer_runtime.sse_url` with `curl -N` for waiting. The stream
+2. If you are running inside Novamira Chat and `finalizer_runtime.online` is
+   true, do not ask the user to open a separate finalization page. The embedded
+   runtime should process ready batches while this dashboard remains open.
+3. If you are running inside Novamira Chat and `finalizer_runtime.online` is
+   false, ask the user to reload Novamira Chat. Continue planning and reading
+   content, but do not assume a queued static/native block batch can finalize
+   until the runtime is online and able to process queued changes.
+4. If you are running as an external MCP client and `finalizer_runtime.online`
+   is false, ask the user to open `finalizer_runtime.dashboard_url` in
+   `wp-admin` and keep that page open while you work.
+5. If later batch responses show `online=false`, the browser runtime was
+   closed, logged out, or lost its session; ask the user to reopen or reload
+   the relevant page.
+6. Use `finalizer_runtime.sse_url` with `curl -N` for waiting. The stream
    sends short-lived status events and may ask you to reconnect before PHP
    execution limits apply. Use `finalizer_runtime.poll_url` with plain `curl`
    as the fallback. Do not repeatedly call MCP abilities just to wait for the
@@ -69,8 +76,9 @@ own editor JavaScript, so never hand-write a block's HTML.
      `finalizer_runtime.sse_url` with `curl -N` until the batch reaches
      `finalized`, `failed`, or `conflicted`.
   4. If the runtime is offline or becomes offline while polling, ask the user
-     to reopen the generic Block Editor Queue page and keep it open. The
-     returned `finalization_url` points to the same generic page.
+     to reload Novamira Chat when running inside Novamira Chat. External
+     MCP clients should ask the user to reopen the returned
+     `finalization_url`.
 
 ## Completion
 

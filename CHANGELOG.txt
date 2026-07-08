@@ -1,4 +1,7 @@
+v1.9.0 - 2026/07/08
+* New: Novamira Chat, an AI agent that lives inside your WordPress dashboard. Describe what you want in plain language and it makes the change, showing you exactly what it will do and asking for your approval first. It runs on your own AI provider key, so there is no subscription and you pay only for what the AI uses. Use it on a staging site with backups. Requires WordPress 7 and your own AI provider API key.
 * Tweak: The write-file ability now rejects base64 and binary payloads, and points agents to the upload-link ability for large uploads.
+* Minor Fixes
 
 v1.8.1 - 2026/07/03
 * Fix: The Claude Desktop one-click bundle (.mcpb) is not connecting on recent Claude Desktop versions, so manual configuration is shown by default for now while we look for a solution.

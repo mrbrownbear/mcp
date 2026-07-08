@@ -48,7 +48,7 @@ class Workspace
 {
     public function __construct()
     {
-        \add_action('admin_menu', [$this, 'add_menu'], priority: 11);
+        \add_action('admin_menu', [$this, 'add_menu'], priority: 80);
         \add_action('admin_post_novamira-visual', [$this, 'render_standalone_page']);
         \add_action('admin_post_nopriv_novamira-visual', [$this, 'redirect_to_login']);
         \add_action('wp_ajax_novamira_visual_auth_check', [$this, 'ajax_auth_check']);

@@ -9,7 +9,7 @@ declare(strict_types=1);
  * Plugin Name: Novamira
  * Plugin URI: https://www.novamira.ai
  * Description: MCP server that gives AI agents full access to WordPress through PHP execution and filesystem operations. For development and staging environments only.
- * Version: 1.8.1
+ * Version: 1.9.0
  * Requires at least: 6.9
  * Requires PHP: 8.0
  * Author: Dynamic.ooo
@@ -37,7 +37,7 @@ if (!defined('ABSPATH')) {
     exit();
 }
 
-define(constant_name: 'NOVAMIRA_VERSION', value: '1.8.1');
+define(constant_name: 'NOVAMIRA_VERSION', value: '1.9.0');
 define(constant_name: 'NOVAMIRA_MAX_EXECUTION_TIME', value: 30);
 define('NOVAMIRA_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('NOVAMIRA_SANDBOX_DIR', WP_CONTENT_DIR . '/novamira-sandbox/');
@@ -158,7 +158,11 @@ function novamira_render_mcp_dependency_notice(): void
     $page = $_GET['page'] ?? null;
     if (
         is_string($page)
-        && in_array($page, ['novamira-connect', 'novamira-abilities', 'novamira-sandbox'], strict: true)
+        && in_array(
+            $page,
+            ['novamira-connect', 'novamira-abilities', 'novamira-chat', 'novamira-sandbox'],
+            strict: true,
+        )
     ) {
         return;
     }
@@ -232,10 +236,14 @@ if ($novamira_dependency_error !== null) {
     novamira_set_mcp_dependency_error($novamira_dependency_error);
 }
 
+require_once __DIR__ . '/includes/chat-schema.php';
+
 register_activation_hook(__FILE__, callback: 'novamira_activation_check');
+register_activation_hook(__FILE__, callback: 'novamira_chat_schema_install');
 register_deactivation_hook(__FILE__, callback: 'novamira_unschedule_gutenberg_cron');
 add_action('admin_notices', callback: 'novamira_render_mcp_dependency_notice');
 add_action('network_admin_notices', callback: 'novamira_render_mcp_dependency_notice');
+add_action('plugins_loaded', callback: 'novamira_chat_schema_maybe_install');
 add_action('rest_api_init', callback: 'novamira_register_missing_mcp_endpoint', priority: 999);
 
 require_once __DIR__ . '/includes/helpers.php';
@@ -251,6 +259,7 @@ require_once __DIR__ . '/includes/instructions-admin.php';
 \Novamira\Context\boot_context_admin();
 require_once __DIR__ . '/includes/rest-shim.php';
 require_once __DIR__ . '/novamira-visual/bootstrap.php';
+require_once __DIR__ . '/includes/chat.php';
 
 add_action('admin_post_novamira_toggle_ai_abilities', callback: 'novamira_handle_admin_bar_toggle');
 add_action('admin_post_novamira_download_mcpb', callback: 'novamira_handle_download_mcpb');
@@ -545,48 +554,60 @@ add_action('admin_enqueue_scripts', static function (string $hook): void {
 });
 
 // Register admin menus.
-add_action('admin_menu', static function () {
-    // Top-level menu item (shows the Connect page).
-    add_menu_page(
-        page_title: __('Configuration', domain: 'novamira'),
-        menu_title: 'Novamira',
-        capability: novamira_manage_capability(),
-        menu_slug: 'novamira-connect',
-        callback: 'novamira_render_connect_page',
-        icon_url: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHBhdGggZmlsbD0iYmxhY2siIGQ9Ik01IDRoNi41bDkuNSAxNi41VjRIMjd2MjRoLTYuNUwxMSAxMS41VjI4SDVWNHoiLz48L3N2Zz4=',
-        position: 3,
-    );
+// Menu order uses spaced admin_menu priorities (multiples of 10) so entries
+// can be positioned without post-hoc reordering.
+add_action(
+    'admin_menu',
+    static function () {
+        // Top-level menu item (shows the Connect page).
+        add_menu_page(
+            page_title: __('Configuration', domain: 'novamira'),
+            menu_title: 'Novamira',
+            capability: novamira_manage_capability(),
+            menu_slug: 'novamira-connect',
+            callback: 'novamira_render_connect_page',
+            icon_url: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHBhdGggZmlsbD0iYmxhY2siIGQ9Ik01IDRoNi41bDkuNSAxNi41VjRIMjd2MjRoLTYuNUwxMSAxMS41VjI4SDVWNHoiLz48L3N2Zz4=',
+            position: 3,
+        );
 
-    // Rename the auto-created first submenu entry to match the page title.
-    add_submenu_page(
-        parent_slug: 'novamira-connect',
-        page_title: __('Configuration', domain: 'novamira'),
-        menu_title: __('Configuration', domain: 'novamira'),
-        capability: novamira_manage_capability(),
-        menu_slug: 'novamira-connect',
-        callback: 'novamira_render_connect_page',
-    );
+        // Rename the auto-created first submenu entry to match the page title.
+        add_submenu_page(
+            parent_slug: 'novamira-connect',
+            page_title: __('Configuration', domain: 'novamira'),
+            menu_title: __('Configuration', domain: 'novamira'),
+            capability: novamira_manage_capability(),
+            menu_slug: 'novamira-connect',
+            callback: 'novamira_render_connect_page',
+        );
 
-    // Abilities Hub sub-page.
-    add_submenu_page(
-        parent_slug: 'novamira-connect',
-        page_title: __('Abilities Hub', domain: 'novamira'),
-        menu_title: __('Abilities Hub', domain: 'novamira'),
-        capability: novamira_manage_capability(),
-        menu_slug: 'novamira-abilities',
-        callback: 'novamira_render_settings_page',
-    );
+        // Abilities Hub sub-page.
+        add_submenu_page(
+            parent_slug: 'novamira-connect',
+            page_title: __('Abilities Hub', domain: 'novamira'),
+            menu_title: __('Abilities Hub', domain: 'novamira'),
+            capability: novamira_manage_capability(),
+            menu_slug: 'novamira-abilities',
+            callback: 'novamira_render_settings_page',
+        );
+    },
+    priority: 10,
+);
 
-    // Sandbox sub-page.
-    add_submenu_page(
-        parent_slug: 'novamira-connect',
-        page_title: __('Sandbox', domain: 'novamira'),
-        menu_title: __('Sandbox', domain: 'novamira'),
-        capability: novamira_manage_capability(),
-        menu_slug: 'novamira-sandbox',
-        callback: 'novamira_render_sandbox_page',
-    );
-});
+// Sandbox sub-page — priority 50 places it after Context (30) and Skills (40).
+add_action(
+    'admin_menu',
+    static function () {
+        add_submenu_page(
+            parent_slug: 'novamira-connect',
+            page_title: __('Sandbox', domain: 'novamira'),
+            menu_title: __('Sandbox', domain: 'novamira'),
+            capability: novamira_manage_capability(),
+            menu_slug: 'novamira-sandbox',
+            callback: 'novamira_render_sandbox_page',
+        );
+    },
+    priority: 50,
+);
 
 $is_enabled = novamira_is_enabled();
 

@@ -465,5 +465,5 @@ function render_context_notice(?array $notice): void
 
 function boot_context_admin(): void
 {
-    add_action('admin_menu', callback: __NAMESPACE__ . '\\register_context_menu', priority: 12);
+    add_action('admin_menu', callback: __NAMESPACE__ . '\\register_context_menu', priority: 30);
 }

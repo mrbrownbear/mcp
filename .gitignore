@@ -1,8 +1,17 @@
 .mcp.json
 /vendor
+node_modules/
 /build/sync-vendor/
-novamira-visual/dist/
 *.swp
+
+# Build artifacts
+/build/
+# Compiled assets are generated (webpack); static assets below are re-included.
+/includes/assets/*
+!/includes/assets/sandbox.css
+!/includes/assets/hub.css
+!/includes/assets/hub.js
+/novamira-visual/dist/
 
 # IDE
 .idea
@@ -31,4 +40,3 @@ refs
 .claude
 .playwright-mcp/
 includes/skills/dev-mock.php
-node_modules/

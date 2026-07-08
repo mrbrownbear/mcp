@@ -36,10 +36,8 @@ require_once __DIR__ . '/abilities/skill-delete.php';
 add_action('init', __NAMESPACE__ . '\\Cpt\\register');
 // Skills is registered as a submenu under the Novamira top-level menu;
 // run after Novamira's main menu callback (priority 10) attaches the
-// parent slug `novamira-connect`. A second pass at a higher priority
-// reorders the entry so Skills sits directly after AI Abilities.
-add_action('admin_menu', __NAMESPACE__ . '\\Admin\\register_menu', priority: 11);
-add_action('admin_menu', __NAMESPACE__ . '\\Admin\\reorder_submenu', priority: 999);
+// parent slug `novamira-connect`.
+add_action('admin_menu', __NAMESPACE__ . '\\Admin\\register_menu', priority: 40);
 add_action('admin_init', __NAMESPACE__ . '\\Admin\\register_post_handlers');
 add_action('admin_notices', __NAMESPACE__ . '\\Notices\\render');
 add_action('admin_enqueue_scripts', __NAMESPACE__ . '\\Admin\\enqueue_assets');

@@ -1071,8 +1071,12 @@ function novamira_build_server_instructions()
 /**
  * Render the branded admin header with logo and background color.
  */
-function novamira_render_admin_header(): void
-{ ?>
+function novamira_render_admin_header(
+    string $logo_file = 'novamira_logo.svg',
+    string $logo_alt = 'Novamira',
+    int $logo_width = 200,
+    int $logo_height = 40,
+): void { ?>
     <style>
         .novamira-admin-header-wrap {
             background: #000;
@@ -1100,9 +1104,11 @@ function novamira_render_admin_header(): void
     </style>
     <div class="novamira-admin-header-wrap">
         <div class="novamira-admin-header">
-            <img src="<?php echo
-                esc_url((string) NOVAMIRA_PLUGIN_URL . 'assets/novamira_logo.svg')
-            ; ?>" alt="Novamira" width="200" height="40">
+            <img src="<?php echo esc_url((string) NOVAMIRA_PLUGIN_URL . 'assets/' . $logo_file); ?>" alt="<?php echo
+                esc_attr($logo_alt)
+            ; ?>" width="<?php echo esc_attr((string) $logo_width); ?>" height="<?php echo
+                esc_attr((string) $logo_height)
+            ; ?>">
         </div>
     </div>
     <?php }

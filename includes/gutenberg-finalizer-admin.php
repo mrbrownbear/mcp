@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
 
 function boot_gutenberg_finalizer_admin(): void
 {
-    add_action('admin_menu', __NAMESPACE__ . '\\register_gutenberg_finalizer_menu');
+    add_action('admin_menu', __NAMESPACE__ . '\\register_gutenberg_finalizer_menu', priority: 60);
     add_action('admin_enqueue_scripts', __NAMESPACE__ . '\\enqueue_gutenberg_finalizer_assets');
 }
 
@@ -44,6 +44,13 @@ function enqueue_gutenberg_finalizer_assets(string $hook_suffix): void
         return;
     }
 
+    enqueue_gutenberg_finalizer_runtime_assets();
+
+    unset($hook_suffix);
+}
+
+function enqueue_gutenberg_finalizer_runtime_assets(): void
+{
     wp_register_script(
         handle: 'novamira-gutenberg-finalizer',
         src: false,
@@ -65,8 +72,6 @@ function enqueue_gutenberg_finalizer_assets(string $hook_suffix): void
     }
     wp_add_inline_script(handle: 'novamira-gutenberg-finalizer', data: gutenberg_finalizer_script());
     wp_enqueue_script(handle: 'novamira-gutenberg-finalizer');
-
-    unset($hook_suffix);
 }
 
 function is_gutenberg_finalizer_request(): bool
@@ -200,7 +205,8 @@ function gutenberg_finalizer_script(): string
     return <<<'JS'
         ( function () {
             const config = window.novamiraGutenbergFinalizer || {};
-            const root = document.getElementById( 'novamira-gb-finalizer' );
+            const rootId = config.rootId || 'novamira-gb-finalizer';
+            const root = document.getElementById( rootId );
             if ( ! root || ! window.wp || ! wp.apiFetch ) {
                 return;
             }
@@ -210,7 +216,7 @@ function gutenberg_finalizer_script(): string
 
             const progress = document.getElementById( 'novamira-gb-progress' );
             const notice = document.getElementById( 'novamira-gb-notice' );
-            const editorFrame = document.getElementById( 'novamira-gb-editor-frame' );
+            let editorFrame = document.getElementById( 'novamira-gb-editor-frame' );
             const editorLoadTimeoutMs = Number( config.editorLoadTimeoutMs || 30000 );
             const blockRegistrationTimeoutMs = Number( config.blockRegistrationTimeoutMs || 30000 );
             let leaseOwner = '';
@@ -290,10 +296,43 @@ function gutenberg_finalizer_script(): string
                 return url.href;
             };
 
-            const navigateEditorFrame = ( editorUrl ) => {
-                if ( ! editorFrame ) {
-                    throw new Error( 'The hidden editor iframe is not available on this admin page.' );
+            const ensureEditorFrame = () => {
+                if ( editorFrame ) {
+                    return editorFrame;
                 }
+
+                const wrap = document.createElement( 'div' );
+                wrap.className = 'novamira-gb-editor-frame-wrap';
+                wrap.setAttribute( 'aria-hidden', 'true' );
+                wrap.style.position = 'absolute';
+                wrap.style.top = '0';
+                wrap.style.left = '-10000px';
+                wrap.style.width = '1280px';
+                wrap.style.height = '900px';
+                wrap.style.overflow = 'hidden';
+                wrap.style.opacity = '0';
+                wrap.style.pointerEvents = 'none';
+
+                const frame = document.createElement( 'iframe' );
+                frame.id = 'novamira-gb-editor-frame';
+                frame.className = 'novamira-gb-editor-frame';
+                frame.title = 'Novamira hidden block editor';
+                frame.tabIndex = -1;
+                frame.src = 'about:blank';
+                frame.style.display = 'block';
+                frame.style.width = '1280px';
+                frame.style.height = '900px';
+                frame.style.border = '0';
+
+                wrap.appendChild( frame );
+                root.appendChild( wrap );
+                editorFrame = frame;
+
+                return frame;
+            };
+
+            const navigateEditorFrame = ( editorUrl ) => {
+                const frame = ensureEditorFrame();
 
                 const nextUrl = sameOriginEditorUrl( editorUrl );
                 if ( editorFrameUrl === nextUrl ) {
@@ -304,7 +343,7 @@ function gutenberg_finalizer_script(): string
                 editorFrameLoadPromise = new Promise( ( resolve, reject ) => {
                     let settled = false;
                     const cleanup = () => {
-                        editorFrame.removeEventListener( 'load', onLoad );
+                        frame.removeEventListener( 'load', onLoad );
                         window.clearTimeout( timeoutId );
                     };
                     const onLoad = () => {
@@ -324,8 +363,8 @@ function gutenberg_finalizer_script(): string
                         reject( new Error( 'The hidden editor iframe did not finish loading.' ) );
                     }, editorLoadTimeoutMs );
 
-                    editorFrame.addEventListener( 'load', onLoad );
-                    editorFrame.src = nextUrl;
+                    frame.addEventListener( 'load', onLoad );
+                    frame.src = nextUrl;
                 } );
                 editorFrameLoadPromise.catch( () => {
                     if ( editorFrameUrl === nextUrl ) {

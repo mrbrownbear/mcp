@@ -15,16 +15,30 @@ VERSION="$1"
 mkdir -p "$BUILD_DIR"
 cd "$BASEDIR"
 
-cd novamira-visual
-bun install --frozen-lockfile
+# Build the Novamira Chat dashboard assets (src/chat -> includes/assets/chat)
+bun install
 bun run build
-cd "$BASEDIR"
+
+# Build Novamira Visual assets when present
+if [ -d novamira-visual ]; then
+	cd novamira-visual
+	bun install --frozen-lockfile
+	bun run build
+	cd "$BASEDIR"
+fi
 
 GIT_LS_FILES=$(mktemp)
 git ls-files >"$GIT_LS_FILES"
 rsync -rl --files-from="$GIT_LS_FILES" --exclude-from=build/build-ignore ./ "$BUILD_DIR/"
 rm "$GIT_LS_FILES"
-rsync -rl --include='*.js' --exclude='*' novamira-visual/dist/ "$BUILD_DIR/novamira-visual/dist/"
+
+# Novamira Chat compiled assets are gitignored, so copy them in explicitly
+rsync -rl --mkpath includes/assets/chat/ "$BUILD_DIR/includes/assets/chat/"
+
+# Novamira Visual compiled assets when present
+if [ -d novamira-visual/dist ]; then
+	rsync -rl --mkpath --include='*.js' --exclude='*' novamira-visual/dist/ "$BUILD_DIR/novamira-visual/dist/"
+fi
 
 # Install production deps and copy vendor into build
 composer install --no-dev --optimize-autoloader --no-interaction

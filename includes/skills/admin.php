@@ -32,10 +32,8 @@ function current_user_can_manage(): bool
 /**
  * Skills lives as a submenu under the Novamira top-level menu registered
  * in `novamira.php`. The parent slug `novamira-connect` is the canonical
- * Configuration page. Skills sits directly after Abilities Hub; ordering
- * is fixed in `reorder_submenu()` below because `add_submenu_page` only
- * appends, and we want a specific position rather than the tail of the
- * Novamira submenu.
+ * Configuration page. Its position in the Novamira submenu is set by the
+ * admin_menu priority in bootstrap.php.
  */
 function register_menu(): void
 {
@@ -47,63 +45,6 @@ function register_menu(): void
         menu_slug: PAGE_SLUG,
         callback: __NAMESPACE__ . '\\render_page',
     );
-}
-
-/**
- * Reposition the Context and Skills submenu entries to sit immediately after
- * Abilities Hub (slug `novamira-abilities`), in the order Context then Skills,
- * inside the Novamira menu group. Runs at a priority higher than any caller of
- * `add_submenu_page` for that parent.
- */
-// WordPress exposes the admin menu structure only via the $submenu superglobal;
-// there is no core API to reorder submenu entries, so writing it back is required.
-// @mago-expect lint:no-global
-function reorder_submenu(): void
-{
-    global $submenu;
-    if (!is_array($submenu ?? null) || !is_array($submenu['novamira-connect'] ?? null)) {
-        return;
-    }
-
-    /** @var array<int, array<int, string>> $entries */
-    $entries = $submenu['novamira-connect'];
-
-    // Pull Context and Skills out so we can re-insert them, in order, right
-    // after Abilities Hub. `add_submenu_page` only appends, so pinning a
-    // specific position requires removing then re-inserting the entries.
-    $context_entry = null;
-    $skills_entry = null;
-    foreach ($entries as $key => $entry) {
-        $slug = $entry[2] ?? null;
-        if ($slug === 'novamira-context') {
-            $context_entry = $entry;
-            unset($entries[$key]);
-            continue;
-        }
-        if ($slug === PAGE_SLUG) {
-            $skills_entry = $entry;
-            unset($entries[$key]);
-        }
-    }
-
-    $pinned = array_values(array_filter([$context_entry, $skills_entry]));
-    if ($pinned === []) {
-        return;
-    }
-
-    $reordered = [];
-    $inserted = false;
-    foreach ($entries as $entry) {
-        $reordered[] = $entry;
-        if (!$inserted && ($entry[2] ?? null) === 'novamira-abilities') {
-            array_push($reordered, ...$pinned);
-            $inserted = true;
-        }
-    }
-    if (!$inserted) {
-        array_push($reordered, ...$pinned);
-    }
-    $submenu['novamira-connect'] = $reordered;
 }
 
 function render_page(): void

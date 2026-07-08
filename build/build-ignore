@@ -16,6 +16,10 @@ Makefile
 mago.toml
 composer.json
 composer.lock
+src/**
+package.json
+bun.lock
+tsconfig.json
 novamira-visual/src/**
 novamira-visual/packages/**
 novamira-visual/node_modules/**
