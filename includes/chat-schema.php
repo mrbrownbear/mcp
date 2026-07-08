@@ -17,8 +17,6 @@ const NOVAMIRA_CHAT_SCHEMA_VERSION = 1;
 
 const NOVAMIRA_CHAT_SCHEMA_VERSION_OPTION = 'novamira_chat_schema_version';
 
-const NOVAMIRA_CHAT_LEGACY_OPTION = 'novamira_chat_sessions';
-
 function novamira_chat_wpdb(): wpdb
 {
     // @mago-expect lint:no-global -- $wpdb is WordPress' database handle.
@@ -87,5 +85,4 @@ function novamira_chat_schema_install_current_site(): void
         ) {$charset_collate};");
 
     update_option(NOVAMIRA_CHAT_SCHEMA_VERSION_OPTION, NOVAMIRA_CHAT_SCHEMA_VERSION, autoload: false);
-    delete_option(NOVAMIRA_CHAT_LEGACY_OPTION);
 }
