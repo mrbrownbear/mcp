@@ -1331,7 +1331,6 @@ function novamira_chat_gutenberg_watch_instruction(array $runtime): string
  * @param array<string, mixed> $session
  * @return array{ability: WP_Ability, ability_name: string, tool_call: array<string, mixed>}|WP_Error
  */
-// @mago-expect lint:no-boolean-flag-parameter
 function novamira_chat_prepare_tool_execution(array $session, int $call_index, bool $yolo): array|WP_Error
 {
     $tool_call = is_array($session['tool_calls'][$call_index] ?? null) ? $session['tool_calls'][$call_index] : [];
@@ -2258,7 +2257,6 @@ function novamira_chat_is_filesystem_write_ability(string $name): bool
 
 // Risk is a set of independent boolean flags; passing them individually is the
 // natural signature for turning them into a human-readable reason.
-// @mago-expect lint:no-boolean-flag-parameter
 function novamira_chat_risk_reason(
     bool $requires_approval,
     bool $code_execution,

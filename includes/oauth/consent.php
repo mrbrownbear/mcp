@@ -1,0 +1,239 @@
+<?php
+
+// SPDX-FileCopyrightText: 2026 Ovation S.r.l. <dev@novamira.ai>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+declare(strict_types=1);
+
+namespace Novamira\OAuth\Consent;
+
+use League\OAuth2\Server\Exception\OAuthServerException;
+use Novamira\OAuth\Bridge;
+use Novamira\OAuth\Endpoints\Authorize;
+use Novamira\OAuth\Repositories\ClientRepository;
+use Novamira\OAuth\Repositories\UserEntity;
+use Novamira\OAuth\ServerFactory;
+
+if (!defined('ABSPATH')) {
+    exit();
+}
+
+function register(): void
+{
+    $hook = add_submenu_page(
+        parent_slug: '',
+        page_title: 'Authorize Application',
+        menu_title: '',
+        capability: \novamira_manage_capability(),
+        menu_slug: 'novamira-oauth-consent',
+        callback: __NAMESPACE__ . '\\render',
+    );
+
+    // Approve/Deny must redirect back to the client before any admin HTML is sent. The page
+    // callback runs after the admin header (headers already flushed, so wp_redirect is a no-op
+    // and the browser is left on a blank consent page), so the POST is handled on the load hook,
+    // which fires before any output.
+    if (is_string($hook) && $hook !== '') {
+        add_action('load-' . $hook, __NAMESPACE__ . '\\handle_load');
+    }
+}
+
+/**
+ * Fires before the admin header. Handles the Approve/Deny POST (validate, then redirect to the
+ * client); GET requests fall through untouched so the page callback can draw the form.
+ */
+function handle_load(): void
+{
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        return;
+    }
+    $ctx = resolve_pending();
+    if ($ctx === null) {
+        return;
+    }
+    render_post($ctx['token'], $ctx['pending'], $ctx['redirect_uri'], $ctx['state']);
+}
+
+function render(): void
+{
+    $ctx = resolve_pending();
+    if ($ctx === null) {
+        return;
+    }
+    render_form($ctx['token'], $ctx['client_name'], $ctx['redirect_uri']);
+}
+
+/**
+ * Validate the request and load the pending authorization, shared by the load hook and the page
+ * callback. On any failure it calls wp_die (which exits the request); the null return exists only
+ * to satisfy the return type and is never reached at runtime.
+ *
+ * @return array{
+ *     token: string,
+ *     pending: array<array-key, mixed>,
+ *     redirect_uri: string,
+ *     state: string,
+ *     client_name: string,
+ * }|null
+ */
+function resolve_pending(): ?array
+{
+    if (!is_user_logged_in()) {
+        wp_die('You must be logged in.', title: '', args: ['response' => 403]);
+        return null;
+    }
+    if (!\novamira_current_user_can_manage()) {
+        wp_die('You are not allowed to authorize Novamira applications.', title: '', args: ['response' => 403]);
+        return null;
+    }
+
+    $raw_token = $_GET['token'] ?? '';
+    $token = is_string($raw_token) ? sanitize_text_field($raw_token) : '';
+    if ($token === '') {
+        wp_die('Missing consent token.', title: '', args: ['response' => 400]);
+        return null;
+    }
+
+    // @mago-expect analysis:mixed-assignment
+    $pending = get_transient(Authorize\PENDING_PREFIX . $token);
+    if ($pending === false || !is_array($pending)) {
+        wp_die('Invalid or expired consent token.', title: '', args: ['response' => 400]);
+        return null;
+    }
+
+    $stored_user_id = (int) ($pending['user_id'] ?? 0);
+    if ($stored_user_id !== get_current_user_id()) {
+        wp_die('Session mismatch.', title: '', args: ['response' => 403]);
+        return null;
+    }
+
+    $client_id = (string) ($pending['client_id'] ?? '');
+    $client = (new ClientRepository())->getClientEntity($client_id);
+    if ($client === null) {
+        delete_transient(Authorize\PENDING_PREFIX . $token);
+        wp_die('The application is no longer registered.', title: '', args: ['response' => 400]);
+        return null;
+    }
+
+    return [
+        'token' => $token,
+        'pending' => $pending,
+        'redirect_uri' => (string) ($pending['redirect_uri'] ?? ''),
+        'state' => (string) ($pending['state'] ?? ''),
+        'client_name' => $client->getName(),
+    ];
+}
+
+/** @param array<array-key, mixed> $pending */
+function render_post(string $token, array $pending, string $redirect_uri, string $state): void
+{
+    check_admin_referer('novamira_oauth_consent_' . $token);
+
+    if (array_key_exists('deny', $_POST)) {
+        delete_transient(Authorize\PENDING_PREFIX . $token);
+        wp_redirect(add_query_arg(['error' => 'access_denied', 'state' => $state], $redirect_uri));
+        exit();
+    }
+
+    try {
+        $code_challenge = (string) ($pending['code_challenge'] ?? '');
+        $code_challenge_method = (string) ($pending['code_challenge_method'] ?? '');
+        $scope = (string) ($pending['scope'] ?? 'mcp');
+        $client_id = (string) ($pending['client_id'] ?? '');
+        $user_id = (int) ($pending['user_id'] ?? 0);
+
+        $server = ServerFactory\build_authorization_server();
+        $fakeRequest = Bridge\psr7_from_globals()->withQueryParams([
+            'response_type' => 'code',
+            'client_id' => $client_id,
+            'redirect_uri' => $redirect_uri,
+            'code_challenge' => $code_challenge,
+            'code_challenge_method' => $code_challenge_method,
+            'scope' => $scope,
+            'state' => $state,
+        ]);
+        $authRequest = $server->validateAuthorizationRequest($fakeRequest);
+
+        $userEntity = new UserEntity();
+        $userEntity->setIdentifier((string) $user_id);
+        $authRequest->setUser($userEntity);
+        $authRequest->setAuthorizationApproved(true);
+
+        delete_transient(Authorize\PENDING_PREFIX . $token);
+        $psr7Response = $server->completeAuthorizationRequest($authRequest, Bridge\new_psr7_response());
+
+        wp_redirect($psr7Response->getHeaderLine('Location'));
+        exit();
+    } catch (OAuthServerException $e) {
+        delete_transient(Authorize\PENDING_PREFIX . $token);
+        wp_redirect(add_query_arg([
+            'error' => $e->getErrorType(),
+            'error_description' => $e->getMessage(),
+            'state' => $state,
+        ], $redirect_uri));
+        exit();
+    } catch (\Throwable $e) {
+        delete_transient(Authorize\PENDING_PREFIX . $token);
+        wp_die('An error occurred during authorization. Please try again.', title: '', args: ['response' => 500]);
+    }
+}
+
+function render_form(string $token, string $client_name, string $redirect_uri): void
+{
+    $redirect_destination = redirect_destination_label($redirect_uri);
+
+    \novamira_render_admin_header();
+    echo '<div class="wrap">';
+    echo '<h1>' . esc_html__('Authorize Application', domain: 'novamira') . '</h1>';
+    echo
+        sprintf(
+            '<p>' . esc_html__('%s is requesting MCP access to your WordPress site.', domain: 'novamira') . '</p>',
+            '<strong>' . esc_html($client_name) . '</strong>',
+        )
+    ;
+    echo
+        '<p><strong>'
+            . esc_html__('Redirect destination:', domain: 'novamira')
+            . '</strong> '
+            . esc_html($redirect_destination)
+            . '</p>'
+    ;
+    echo
+        '<p class="description">'
+            . esc_html__(
+                'Only authorize applications you trust. The application name is provided by the connecting client.',
+                domain: 'novamira',
+            )
+            . '</p>'
+    ;
+    echo '<form method="post">';
+    wp_nonce_field('novamira_oauth_consent_' . $token);
+    echo
+        '<button type="submit" name="approve" value="1" class="button button-primary">'
+            . esc_html__('Authorize', domain: 'novamira')
+            . '</button> '
+    ;
+    echo
+        '<button type="submit" name="deny" value="1" class="button">'
+            . esc_html__('Deny', domain: 'novamira')
+            . '</button>'
+    ;
+    echo '</form>';
+    echo '</div>';
+}
+
+function redirect_destination_label(string $redirect_uri): string
+{
+    $parsed = parse_url($redirect_uri);
+    if (!is_array($parsed)) {
+        return $redirect_uri;
+    }
+
+    $scheme = strtolower($parsed['scheme'] ?? '');
+    $host = strtolower($parsed['host'] ?? '');
+    if ($host === '') {
+        return $scheme !== '' ? $scheme . ':' : $redirect_uri;
+    }
+
+    return $scheme . '://' . $host;
+}

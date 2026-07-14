@@ -40,3 +40,6 @@ refs
 .claude
 .playwright-mcp/
 includes/skills/dev-mock.php
+.superpowers/
+node_modules/
+.phpunit.result.cache

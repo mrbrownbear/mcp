@@ -13,6 +13,8 @@ if (!defined('ABSPATH')) {
     exit();
 }
 
+require_once __DIR__ . '/connect-methods.php';
+
 /**
  * Enable AI Abilities for the current site domain.
  */
@@ -380,6 +382,608 @@ function novamira_render_password_row(array $pw, string $dt_format): void
 }
 
 /**
+ * Two-card chooser between OAuth and Application password. Security-first: OAuth is the
+ * recommended card everywhere except a local site served over self-signed HTTPS, where the
+ * browser sign-in would hit an unverifiable certificate; there the password flow (no browser
+ * step) is recommended instead. Both panels are rendered; JS shows one at a time (defaulting
+ * to the recommended one) and degrades to both visible without JS.
+ */
+function novamira_render_method_chooser(
+    ?string $new_password,
+    ?string $existing_password = null,
+    ?WP_Error $existing_error = null,
+): void {
+    // Security-first: recommend OAuth (no secret in the config, mcp scope, revocable) in
+    // every case except a local site on self-signed HTTPS, where the browser cannot verify
+    // the certificate during sign-in; there the password flow (no browser step) is smoother.
+    // OAuth is only offered where its transport is safe (HTTPS, or a local site). On a public
+    // HTTP site it is not selectable; WordPress already blocks application passwords there too.
+    $oauth_available = novamira_oauth_transport_allowed();
+    $oauth_recommended =
+        $oauth_available && !(novamira_host_unreachable_from_cloud() && novamira_likely_self_signed_https());
+    // App password carries the recommendation only in the local self-signed case (OAuth available,
+    // but the browser cannot verify the cert). On a public HTTP site nothing is recommended.
+    $password_recommended = $oauth_available && !$oauth_recommended;
+    $password_active = novamira_password_method_preselected($new_password, $existing_password, $existing_error);
+    $has_password = $new_password !== null || $existing_password !== null;
+    $badge_label = $oauth_recommended
+        ? esc_html__('Recommended for your setup', domain: 'novamira')
+        : esc_html__('Recommended for your local setup', domain: 'novamira');
+    $badge = '<span class="novamira-recommended-badge">' . $badge_label . '</span>';
+    ?>
+    <h2 class="novamira-step-heading">
+        <span class="novamira-step-badge">2</span>
+        <?php esc_html_e('Choose your authentication method', domain: 'novamira'); ?>
+    </h2>
+
+    <div class="novamira-method-cards">
+        <?php if ($oauth_available): ?>
+        <button
+            type="button"
+            class="novamira-method-card"
+            data-method="oauth"
+        >
+            <span class="novamira-method-title">
+                <?php esc_html_e('OAuth', domain: 'novamira'); ?>
+                <?php echo $oauth_recommended ? $badge : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+            </span>
+            <span class="description"><?php esc_html_e(
+                'Sign in through the browser, no password to copy.',
+                domain: 'novamira',
+            ); ?></span>
+        </button>
+        <?php endif; ?>
+        <?php if (!$oauth_available): ?>
+        <button
+            type="button"
+            class="novamira-method-card"
+            disabled
+            aria-disabled="true"
+            style="opacity:.55; cursor:not-allowed;"
+        >
+            <span class="novamira-method-title">
+                <?php esc_html_e('OAuth', domain: 'novamira'); ?>
+                <span
+                    class="novamira-recommended-badge"
+                    style="color:#8a6d1a; background:#fcf3d7;"
+                ><?php esc_html_e('Requires HTTPS', domain: 'novamira'); ?></span>
+            </span>
+            <span class="description"><?php esc_html_e(
+                'OAuth sends tokens over the network, so it needs HTTPS. Enable HTTPS on your site to use it.',
+                domain: 'novamira',
+            ); ?></span>
+        </button>
+        <?php endif; ?>
+        <button
+            type="button"
+            class="novamira-method-card<?php echo $password_active ? ' is-active' : ''; ?>"
+            data-method="password"
+        >
+            <span class="novamira-method-title">
+                <?php esc_html_e('Application password', domain: 'novamira'); ?>
+                <?php echo $password_recommended ? $badge : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+            </span>
+            <span class="description"><?php esc_html_e(
+                'Generate a password and paste it into the client config.',
+                domain: 'novamira',
+            ); ?></span>
+        </button>
+    </div>
+
+    <div class="novamira-method-panel" data-panel="oauth" hidden>
+        <?php novamira_render_oauth_panel(); ?>
+    </div>
+    <div class="novamira-method-panel" data-panel="password"<?php echo $password_active ? '' : ' hidden'; ?>>
+        <?php novamira_render_password_step($new_password, $existing_password, $existing_error); ?>
+        <?php novamira_render_manage_passwords_section(); ?>
+    </div>
+
+    <noscript>
+        <style>.novamira-method-panel[hidden], #novamira-step3[hidden] { display: block; }</style>
+    </noscript>
+
+    <script>
+    (function () {
+        var hasPassword = <?php echo $has_password ? 'true' : 'false'; ?>;
+        // Re-query on every click so panels rendered in later containers (the step 3 section) are
+        // toggled too. Step 3 opens for OAuth immediately, and for the password method only once a
+        // password exists (otherwise the whole step 3 section stays hidden).
+        function apply(method) {
+            document.querySelectorAll('.novamira-method-card').forEach(function (c) {
+                c.classList.toggle('is-active', c.getAttribute('data-method') === method);
+            });
+            document.querySelectorAll('.novamira-method-panel').forEach(function (p) {
+                p.hidden = p.getAttribute('data-panel') !== method;
+            });
+            var step3 = document.getElementById('novamira-step3');
+            if (step3) {
+                step3.hidden = !(method === 'oauth' || (method === 'password' && hasPassword));
+            }
+        }
+        document.querySelectorAll('.novamira-method-card').forEach(function (card) {
+            card.addEventListener('click', function () { apply(card.getAttribute('data-method')); });
+        });
+    })();
+    </script>
+    <?php
+}
+
+/**
+ * Whether the app-password method is pre-selected on load: true when a password action happened
+ * this request (a new or existing password, or an error to surface). OAuth is never pre-selected;
+ * the user picks it. Shared by the chooser and the step 3 section so both agree on the initial
+ * panel visibility.
+ */
+function novamira_password_method_preselected(
+    ?string $new_password,
+    ?string $existing_password,
+    ?WP_Error $existing_error,
+): bool {
+    return $new_password !== null || $existing_password !== null || $existing_error !== null;
+}
+
+/**
+ * Render the OAuth method panel (Step 2). OAuth has no setup action of its own: the per-client
+ * connect instructions live in Step 3 (novamira_render_oauth_config_section), so this panel only
+ * links to the connected-apps manager.
+ */
+function novamira_render_oauth_panel(): void
+{
+    if (!novamira_oauth_transport_allowed()) {
+        return;
+    }
+    $connected_apps_url = admin_url('admin.php?page=novamira-connected-apps');
+    ?>
+    <p class="description" style="margin:0;">
+        <a href="<?php echo esc_url($connected_apps_url); ?>">
+            <?php esc_html_e('Manage connected apps', domain: 'novamira'); ?>
+        </a>
+    </p>
+    <?php
+}
+
+/**
+ * Notice for a local self-signed HTTPS site, explaining the NODE_TLS_REJECT_UNAUTHORIZED flag the
+ * connection config carries. Shared by the app-password and OAuth flows so the wording is identical;
+ * renders nothing unless the site looks self-signed.
+ */
+function novamira_render_local_https_notice(): void
+{
+    if (!novamira_likely_self_signed_https()) {
+        return;
+    }
+    ?>
+    <div class="notice notice-warning inline" style="margin:0 0 12px;">
+        <p style="margin:0;">
+            <strong><?php esc_html_e('Local HTTPS detected.', domain: 'novamira'); ?></strong>
+            <?php printf(
+                /* translators: %s: the NODE_TLS_REJECT_UNAUTHORIZED=0 flag, wrapped in <code> tags */
+                esc_html__(
+                    'Your certificate is not publicly trusted (normal for local development), so the config sets %s. This turns off TLS certificate verification for the whole npx process, including while it downloads the package, so only use it on a network you trust.',
+                    domain: 'novamira',
+                ),
+                '<code>NODE_TLS_REJECT_UNAUTHORIZED=0</code>',
+            ); ?>
+        </p>
+    </div>
+    <?php
+}
+
+/**
+ * Render the tabbed OAuth client-config section (Step 3). One tab per client; a native URL
+ * snippet, a connector button, or the mcp-remote bridge, depending on the client and whether
+ * the site is reachable from the cloud. Uses its own id namespace so it can coexist in the DOM
+ * with the app-password config section (only one method panel is visible at a time).
+ */
+function novamira_render_oauth_config_section(string $rest_url): void
+{
+    if (!novamira_oauth_transport_allowed()) {
+        return;
+    }
+    $default_name = novamira_get_mcp_server_name_default();
+    $name_placeholder = '__NOVAMIRA_MCP_NAME__';
+    $configs = novamira_build_oauth_configs($rest_url, $name_placeholder);
+    $configs_json = (string) wp_json_encode($configs);
+
+    // Same order as the app-password config section; Claude.ai (public-only, absent locally) is
+    // slotted next to the other Claude clients so the local order matches the app-password one exactly.
+    $clients = [
+        'claude-code' => 'Claude Code',
+        'claude-desktop' => 'Claude Desktop',
+        'claude-ai' => 'Claude.ai',
+        'codex' => 'Codex',
+        'antigravity' => 'Antigravity',
+        'cursor' => 'Cursor',
+        'vscode' => 'VS Code',
+        'github-copilot' => 'GitHub Copilot',
+        'windsurf' => 'Windsurf',
+        'cline' => 'Cline',
+        'gemini-cli' => 'Gemini CLI',
+        'roo-code' => 'Roo Code',
+        'amazon-q' => 'Amazon Q',
+        'zed' => 'Zed',
+        'kilo-code' => 'Kilo Code',
+        'opencode' => 'OpenCode',
+    ];
+    ?>
+    <h2 class="novamira-step-heading">
+        <span class="novamira-step-badge">3</span>
+        <?php esc_html_e('Connect Your AI Client', domain: 'novamira'); ?>
+    </h2>
+
+    <?php novamira_render_local_https_notice(); ?>
+
+    <div class="novamira-client-tabs" style="gap:8px; margin-top:16px; margin-bottom:0;">
+    <?php foreach ($clients as $key => $label): ?>
+        <?php if (array_key_exists($key, $configs)): ?>
+        <button
+            type="button"
+            class="novamira-client-tab novamira-top-client-tab novamira-oauth-tab"
+            onclick="novamiraOauthSetClient('<?php echo esc_js($key); ?>', this)"
+        ><?php echo esc_html($label); ?></button>
+        <?php endif; ?>
+    <?php endforeach; ?>
+    </div>
+
+    <div id="novamira-oauth-content" style="display:none; margin-top:16px;">
+        <div id="novamira-oauth-connector-wrap" style="display:none; margin-bottom:12px;">
+            <a
+                id="novamira-oauth-connector-btn"
+                class="button button-primary"
+                style="padding:12px 24px; height:auto; font-size:15px;"
+                href="#"
+                target="_blank"
+                rel="noopener"
+            ><?php esc_html_e('Add the connector', domain: 'novamira'); ?></a>
+        </div>
+
+        <div id="novamira-oauth-deeplink-wrap" style="display:none; margin-bottom:12px;">
+            <a
+                id="novamira-oauth-deeplink-btn"
+                class="button button-primary"
+                style="padding:12px 24px; height:auto; font-size:15px;"
+                href="#"
+            ><?php esc_html_e('One-click install', domain: 'novamira'); ?></a>
+        </div>
+
+        <p style="margin:8px 0 4px;">
+            <button
+                type="button"
+                class="button-link"
+                id="novamira-oauth-name-toggle"
+                aria-expanded="false"
+                aria-controls="novamira-oauth-name-field"
+                onclick="novamiraOauthToggleName(this)"
+            ><?php esc_html_e('Change server name (optional)', domain: 'novamira'); ?></button>
+        </p>
+        <div id="novamira-oauth-name-field" hidden style="display:none; margin:6px 0 14px;">
+            <input
+                type="text"
+                id="novamira-oauth-name"
+                value="<?php echo esc_attr($default_name); ?>"
+                placeholder="<?php echo esc_attr($default_name); ?>"
+                maxlength="25"
+                style="width:220px;"
+                oninput="novamiraOauthUpdateName(this.value)"
+            >
+            <p class="description" style="margin:6px 0 0;">
+                <?php esc_html_e(
+                    'Give the server a name you’ll recognize. The steps and snippets below update as you type.',
+                    domain: 'novamira',
+                ); ?>
+            </p>
+            <div id="novamira-oauth-name-warning" class="notice notice-warning inline" style="display:none; margin:8px 0 0;">
+                <p style="margin:0;">
+                    <?php esc_html_e(
+                        'Maximum 25 characters reached. Required for client compatibility.',
+                        domain: 'novamira',
+                    ); ?>
+                </p>
+            </div>
+            <div
+                id="novamira-oauth-name-suggestion"
+                class="notice notice-warning inline"
+                style="display:none; margin:8px 0 0;"
+            >
+                <p style="margin:0;">
+                    <?php esc_html_e(
+                        'Tip: keep "novamira" in the name so you (and your AI agent) can tell this MCP server apart from others.',
+                        domain: 'novamira',
+                    ); ?>
+                </p>
+            </div>
+        </div>
+
+        <div id="novamira-oauth-hint" style="font-size:13px; color:#666; padding:6px 0 0;"></div>
+
+        <div id="novamira-oauth-manual-btn-wrap" style="display:none;">
+            <hr style="border:none; border-top:1px solid #dcdcde; margin:12px 0 8px;">
+            <button
+                type="button"
+                class="button button-secondary"
+                id="novamira-oauth-manual-toggle"
+                aria-expanded="false"
+                aria-controls="novamira-oauth-manual"
+                onclick="novamiraOauthToggleManual(this)"
+            ><?php esc_html_e('Manual configuration', domain: 'novamira'); ?></button>
+        </div>
+
+        <div id="novamira-oauth-manual" style="display:none; margin-top:14px;">
+            <ol
+                id="novamira-oauth-steps"
+                style="display:none; list-style-type:lower-alpha; margin:0 0 4px; padding-left:22px;"
+            ></ol>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        var configs = <?php echo $configs_json; ?>;
+        var client = '';
+        var defaultName = <?php echo wp_json_encode($default_name); ?>;
+        var mcpName = defaultName;
+        var namePlaceholder = <?php echo wp_json_encode($name_placeholder); ?>;
+        var clientLabels = <?php echo wp_json_encode($clients); ?>;
+        var manualLabelPrefix = <?php echo wp_json_encode(__('Manual configuration for', domain: 'novamira')); ?>;
+        var connectorLabelPrefix = <?php echo wp_json_encode(__('Add the connector to', domain: 'novamira')); ?>;
+        var deeplinkLabelPrefix = <?php echo wp_json_encode(__('One-click install in', domain: 'novamira')); ?>;
+        var stepOpenLabel = <?php echo wp_json_encode(__('Open your config', domain: 'novamira')); ?>;
+        var stepAddLabel = <?php echo wp_json_encode(__('Add this server', domain: 'novamira')); ?>;
+        var stepAddNote = <?php echo
+            wp_json_encode(__(
+                'If your config file already has content, merge this into your existing config instead of replacing it.',
+                domain: 'novamira',
+            ))
+        ; ?>;
+        var stepRunLabel = <?php echo wp_json_encode(__('Run this in your terminal', domain: 'novamira')); ?>;
+        var copyLabel = <?php echo wp_json_encode(__('Copy', domain: 'novamira')); ?>;
+        var copiedLabel = <?php echo wp_json_encode(__('Copied!', domain: 'novamira')); ?>;
+        var stepSignInLabel = <?php echo wp_json_encode(__('Sign in', domain: 'novamira')); ?>;
+        var stepSignInNote = <?php echo
+            wp_json_encode(__(
+                'The next time your AI client connects, your browser opens so you can authorize it. Approve to finish connecting.',
+                domain: 'novamira',
+            ))
+        ; ?>;
+        var stepSignInRestartLabel = <?php echo wp_json_encode(__('Restart and sign in', domain: 'novamira')); ?>;
+        var stepSignInRestartNote = <?php echo
+            wp_json_encode(__(
+                'Restart your AI client so it loads the server. On the next start your browser opens to sign in and authorize. Approve to finish.',
+                domain: 'novamira',
+            ))
+        ; ?>;
+        var editConfigNote = <?php echo
+            wp_json_encode(__(
+                'In Claude Desktop, open Settings → Developer → Edit Config to open this file.',
+                domain: 'novamira',
+            ))
+        ; ?>;
+
+        var manualOpen = false;
+
+        function setDisplay(id, show) {
+            document.getElementById(id).style.display = show ? '' : 'none';
+        }
+
+        function esc(s) {
+            return String(s).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+
+        function withName(s) {
+            return esc(String(s).split(namePlaceholder).join(mcpName));
+        }
+
+        // Config-file clients: turn the snippet + its file locations into a two-step guide (open the
+        // config at its real path, then paste the snippet). Connector clients ship explicit steps.
+        function signInStep(needsRestart) {
+            return needsRestart
+                ? { title: stepSignInRestartLabel, body: stepSignInRestartNote }
+                : { title: stepSignInLabel, body: stepSignInNote };
+        }
+
+        function buildConfigSteps(cfg) {
+            if (cfg.isShell) {
+                return [{ title: stepRunLabel, code: cfg.code }, signInStep(false)];
+            }
+            var steps = [];
+            var keys = cfg.paths ? Object.keys(cfg.paths) : [];
+            if (keys.length) {
+                var bodyHtml = keys.map(function (label) {
+                    return '<code>' + esc(cfg.paths[label]) + '</code> (' + esc(label) + ')';
+                }).join('<br>');
+                // Claude Desktop opens this exact file from its own UI, so point there first.
+                if (client === 'claude-desktop') {
+                    bodyHtml = esc(editConfigNote) + '<br>' + bodyHtml;
+                }
+                steps.push({ title: stepOpenLabel, bodyHtml: bodyHtml });
+            }
+            steps.push({ title: stepAddLabel, body: stepAddNote, code: cfg.code });
+            steps.push(signInStep(true));
+            return steps;
+        }
+
+        function renderSteps(steps) {
+            var html = '';
+            steps.forEach(function (s) {
+                html += '<li style="margin:0 0 12px;"><strong>' + esc(s.title) + '</strong>';
+                if (s.bodyHtml) {
+                    html += '<div style="margin-top:2px;">' + s.bodyHtml + '</div>';
+                } else if (s.body) {
+                    html += '<div style="margin-top:2px;">' + withName(s.body) + '</div>';
+                }
+                if (s.copy) {
+                    html +=
+                        '<div style="margin-top:6px;">' +
+                        '<span style="display:inline-flex; align-items:center; gap:10px; max-width:100%; ' +
+                        'background:#f6f7f7; border:1px solid #dcdcde; border-radius:6px; padding:5px 6px 5px 12px;">' +
+                        '<span style="font-weight:600; word-break:break-all;">' +
+                        withName(s.copy) +
+                        '</span><button type="button" class="button button-small" style="flex:none;" ' +
+                        'onclick="novamiraOauthCopyChip(this)">' +
+                        esc(copyLabel) +
+                        '</button></span></div>';
+                }
+                if (s.code) {
+                    html +=
+                        '<div class="novamira-config-block" style="margin-top:6px;">' +
+                        '<pre>' + withName(s.code) + '</pre>' +
+                        '<button type="button" class="button novamira-copy-btn" onclick="novamiraOauthCopyStep(this)">' +
+                        esc(copyLabel) +
+                        '</button></div>';
+                }
+                html += '</li>';
+            });
+            document.getElementById('novamira-oauth-steps').innerHTML = html;
+        }
+
+        function render() {
+            if (!client) { return; }
+            var cfg = configs[client];
+            if (!cfg) { return; }
+
+            var isConnector = cfg.kind === 'connector';
+            var hasDeeplink = !!cfg.deeplink;
+            var hasSteps = !!(cfg.steps && cfg.steps.length);
+            var hasCode = !!cfg.code;
+            var hasManual = hasSteps || hasCode;
+            var hasPrimary = isConnector || hasDeeplink;
+
+            var label = clientLabels[client] || '';
+            setDisplay('novamira-oauth-connector-wrap', isConnector);
+            if (isConnector) {
+                var connBtn = document.getElementById('novamira-oauth-connector-btn');
+                connBtn.setAttribute('href', cfg.connector);
+                connBtn.textContent = connectorLabelPrefix + ' ' + label;
+            }
+
+            setDisplay('novamira-oauth-deeplink-wrap', hasDeeplink);
+            if (hasDeeplink) {
+                var dl = cfg.deeplink.split(namePlaceholder).join(encodeURIComponent(mcpName));
+                var dlBtn = document.getElementById('novamira-oauth-deeplink-btn');
+                dlBtn.setAttribute('href', dl);
+                dlBtn.textContent = deeplinkLabelPrefix + ' ' + label;
+            }
+
+            // The hint describes the OAuth connection method, so it only belongs with the one-click
+            // primaries (connector / deeplink). For manual config-file clients the steps cover it.
+            var showHint = hasPrimary && cfg.hint;
+            var hintEl = document.getElementById('novamira-oauth-hint');
+            hintEl.innerHTML = showHint ? cfg.hint : '';
+            hintEl.style.display = showHint ? '' : 'none';
+
+            setDisplay('novamira-oauth-steps', hasManual);
+            if (hasSteps) {
+                renderSteps(cfg.steps);
+            } else if (hasCode) {
+                renderSteps(buildConfigSteps(cfg));
+            }
+
+            // The manual guide is a fallback behind a toggle when there is a one-click primary
+            // (connector or deeplink); with no primary it is the only way in, so show it directly.
+            setDisplay('novamira-oauth-manual-btn-wrap', hasManual && hasPrimary);
+            setDisplay('novamira-oauth-manual', hasManual && (!hasPrimary || manualOpen));
+            document.getElementById('novamira-oauth-manual-toggle')
+                .setAttribute('aria-expanded', manualOpen ? 'true' : 'false');
+        }
+
+        window.novamiraOauthSetClient = function (key, btn) {
+            client = key;
+            manualOpen = false;
+            document.querySelectorAll('.novamira-oauth-tab').forEach(function (t) { t.classList.remove('active'); });
+            btn.classList.add('active');
+            if (clientLabels[key]) {
+                document.getElementById('novamira-oauth-manual-toggle').textContent =
+                    manualLabelPrefix + ' ' + clientLabels[key];
+            }
+            document.getElementById('novamira-oauth-content').style.display = '';
+            render();
+        };
+
+        window.novamiraOauthToggleManual = function (btn) {
+            manualOpen = !manualOpen;
+            btn.setAttribute('aria-expanded', manualOpen ? 'true' : 'false');
+            setDisplay('novamira-oauth-manual', manualOpen);
+        };
+
+        function updateOauthNameWarning(value) {
+            document.getElementById('novamira-oauth-name-warning').style.display = value.length >= 25 ? 'block' : 'none';
+            var trimmed = value.trim();
+            var missing = trimmed.length > 0 && trimmed.toLowerCase().indexOf('novamira') === -1;
+            document.getElementById('novamira-oauth-name-suggestion').style.display = missing ? 'block' : 'none';
+        }
+
+        window.novamiraOauthUpdateName = function (value) {
+            mcpName = value.trim() || defaultName;
+            updateOauthNameWarning(value);
+            render();
+        };
+
+        window.novamiraOauthToggleName = function (btn) {
+            var field = document.getElementById('novamira-oauth-name-field');
+            var expanded = btn.getAttribute('aria-expanded') === 'true';
+            field.style.display = expanded ? 'none' : 'block';
+            field.hidden = expanded;
+            btn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        };
+
+        window.novamiraOauthCopyStep = function (btn) {
+            var pre = btn.previousElementSibling;
+            if (!pre) { return; }
+            navigator.clipboard.writeText(pre.textContent).then(function () {
+                var orig = btn.textContent;
+                btn.textContent = copiedLabel;
+                setTimeout(function () { btn.textContent = orig; }, 1500);
+            });
+        };
+
+        window.novamiraOauthCopyChip = function (btn) {
+            var value = btn.previousElementSibling;
+            if (!value) { return; }
+            navigator.clipboard.writeText(value.textContent).then(function () {
+                var orig = btn.textContent;
+                btn.textContent = copiedLabel;
+                setTimeout(function () { btn.textContent = orig; }, 1500);
+            });
+        };
+    }());
+    </script>
+    <?php
+}
+
+/**
+ * Render the "Connect Your AI Client" container (Step 3), with one method panel toggled by the
+ * step 2 chooser. The OAuth panel is always populated; the app-password panel shows the config only
+ * once a password exists. The wrapping section stays hidden until a method is picked (and, for app
+ * password, until the password is generated), gated by its id from the chooser script.
+ */
+function novamira_render_connect_client_section(
+    ?string $new_password,
+    ?string $existing_password,
+    ?WP_Error $existing_error,
+): void {
+    $password_active = novamira_password_method_preselected($new_password, $existing_password, $existing_error);
+    $has_password = $new_password !== null || $existing_password !== null;
+    $rest_url = rest_url('mcp/novamira');
+    // OAuth lives on its own MCP server so the canonical route above stays Application-Password-only
+    // and untouched by the OAuth challenge. See novamira_register_oauth_mcp_server().
+    $oauth_rest_url = rest_url('mcp/novamira-oauth');
+    $username = wp_get_current_user()->user_login;
+    $display_password = $new_password ?? $existing_password ?? 'YOUR-APP-PASSWORD';
+    ?>
+    <div class="novamira-method-panel" data-panel="oauth" hidden>
+        <?php novamira_render_oauth_config_section($oauth_rest_url); ?>
+    </div>
+    <div class="novamira-method-panel" data-panel="password"<?php echo $password_active ? '' : ' hidden'; ?>>
+        <?php if ($has_password): ?>
+            <?php novamira_render_config_section($rest_url, $username, $display_password); ?>
+        <?php endif; ?>
+    </div>
+    <?php
+}
+
+/**
  * Render the "Step 2 — Application Password" card.
  *
  * Just the generate button (with a collapsible name input) and a success notice after generation.
@@ -398,10 +1002,6 @@ function novamira_render_password_step(
     $has_existing = novamira_get_mcp_passwords() !== [];
     $existing_section_open = $existing_password !== null || $existing_error !== null;
     ?>
-    <h2 class="novamira-step-heading">
-        <span class="novamira-step-badge">2</span>
-        <?php esc_html_e('Application Password', domain: 'novamira'); ?>
-    </h2>
     <p class="description" style="margin:0 0 12px;">
         <?php esc_html_e(
             'Generate an application password that your AI client will use to authenticate with WordPress. The password is embedded into the connection text in step 3.',
@@ -443,7 +1043,7 @@ function novamira_render_password_step(
     <?php if ($new_password === null && $existing_password !== null): ?>
         <div class="notice notice-success inline" style="margin:8px 0 16px;">
             <p style="margin:0;"><?php esc_html_e(
-                'Password accepted. It is now embedded in the connection text in step 3.',
+                'Password accepted. It is now embedded in the connection text in step 4.',
                 domain: 'novamira',
             ); ?></p>
         </div>
@@ -646,7 +1246,7 @@ function novamira_build_paste_to_agent_paragraph(
         '',
         'Don\'t ask me to confirm choices already specified above. After writing the config, restart or reload the MCP session (most clients require it), then verify by listing the server\'s tools. If it fails, show me the stderr from the npx process before proposing changes.',
         '',
-        'If you cannot modify the config of this AI client from here, tell me to expand "Need the JSON config for a specific client?" on the Novamira Configuration page and copy the snippet manually.',
+        'If you cannot modify the config of this AI client from here, tell me to expand "Manual configuration for your AI client" on the Novamira Configuration page and copy the snippet manually.',
     ];
 
     return implode("\n", $lines);
@@ -1113,6 +1713,12 @@ function novamira_render_mcpb_download(): void
             'Currently not working with newer Claude Desktop versions',
             domain: 'novamira',
         ); ?></span></button>
+        <p class="description" style="margin:8px 0 0;">
+            <?php esc_html_e(
+                'Use the configuration below instead, or go back to step 2 and choose OAuth, which does not use a bundle.',
+                domain: 'novamira',
+            ); ?>
+        </p>
     </div>
     <?php }
 
@@ -1128,6 +1734,12 @@ function novamira_render_json_config_block(): void
             ); ?></button>
         </div>
         <div id="novamira-config-footer" style="font-size:13px; color:#666; border-top: 1px solid #c3c4c7;">
+            <div id="novamira-config-merge-note" style="padding: 10px 16px 0;">
+                <?php esc_html_e(
+                    'If your config file already has content, merge this into your existing config instead of replacing it.',
+                    domain: 'novamira',
+                ); ?>
+            </div>
             <div id="novamira-config-hint" style="padding: 10px 16px;"></div>
             <div id="novamira-config-paths" style="padding: 0 16px 10px;"></div>
         </div>
@@ -1200,17 +1812,7 @@ function novamira_render_config_section(string $rest_url, string $username, stri
 
     <div id="novamira-connect-content" style="display:none; margin-top:16px;">
 
-    <?php if (novamira_likely_self_signed_https()): ?>
-        <div class="notice notice-warning inline" style="margin:0 0 12px;">
-            <p style="margin:0;">
-                <strong><?php esc_html_e('Local HTTPS detected.', domain: 'novamira'); ?></strong>
-                <?php esc_html_e(
-                    'Your site uses HTTPS with a certificate that is not publicly trusted (normal for local development). The snippets below include a small flag so your AI client can connect anyway.',
-                    domain: 'novamira',
-                ); ?>
-            </p>
-        </div>
-    <?php endif; ?>
+    <?php novamira_render_local_https_notice(); ?>
 
     <?php novamira_render_mcpb_download(); ?>
 
@@ -1268,7 +1870,7 @@ function novamira_render_config_section(string $rest_url, string $username, stri
         >
         <p class="description" style="margin:6px 0 0;">
             <?php esc_html_e(
-                'Editing here updates the connection text and JSON snippets below in real time. Each AI client config keeps its own name once saved on its side.',
+                'Give the server a name you’ll recognize. The connection text and snippets below update as you type.',
                 domain: 'novamira',
             ); ?>
         </p>
@@ -1299,7 +1901,7 @@ function novamira_render_config_section(string $rest_url, string $username, stri
             aria-expanded="false"
             aria-controls="novamira-manual-config"
             onclick="novamiraToggleManualConfig(this)"
-        ><?php esc_html_e('Manual setup for your AI client', domain: 'novamira'); ?></button>
+        ><?php esc_html_e('Manual configuration for your AI client', domain: 'novamira'); ?></button>
     </div>
 
     <div id="novamira-manual-config" hidden style="display:none; margin-top:14px;">
@@ -1417,6 +2019,9 @@ function novamira_render_config_section(string $rest_url, string $username, stri
             }
             document.getElementById('novamira-config-hint').innerHTML = cfg.hint;
 
+            var mergeNote = document.getElementById('novamira-config-merge-note');
+            if (mergeNote) { mergeNote.style.display = cfg.isShell ? 'none' : ''; }
+
             var isDesktop = client === 'claude-desktop';
             var mcpbEl = document.getElementById('novamira-mcpb-download');
             if (mcpbEl) { mcpbEl.style.display = isDesktop ? '' : 'none'; }
@@ -1426,13 +2031,6 @@ function novamira_render_config_section(string $rest_url, string $username, stri
             if (pwNotice) { pwNotice.style.display = isDesktop ? 'none' : ''; }
             var manualBtnWrap = document.getElementById('novamira-manual-btn-wrap');
             if (manualBtnWrap) { manualBtnWrap.style.display = ''; }
-            var manualConfig = document.getElementById('novamira-manual-config');
-            var manualToggle = document.getElementById('novamira-manual-toggle');
-            if (manualConfig && manualToggle && isDesktop) {
-                manualConfig.style.display = '';
-                manualConfig.hidden = false;
-                manualToggle.setAttribute('aria-expanded', 'true');
-            }
             var npxlessToggle = document.getElementById('novamira-npxless-toggle');
             if (npxlessToggle) {
                 var showNpxless = client === 'claude-code' || client === 'codex';
@@ -1469,7 +2067,7 @@ function novamira_render_config_section(string $rest_url, string $username, stri
             var manualToggle = document.getElementById('novamira-manual-toggle');
             if (manualToggle && clientLabels[key]) {
                 manualToggle.textContent = <?php echo
-                    wp_json_encode(__('Manual setup for', domain: 'novamira'))
+                    wp_json_encode(__('Manual configuration for', domain: 'novamira'))
                 ; ?> + ' ' + clientLabels[key];
             }
             renderConfig();
@@ -1716,11 +2314,8 @@ function novamira_render_enable_prompt(?WP_Error $dependency_error): void
 /**
  * Render the connect / setup dashboard page.
  */
-// Complexity is inherent: this is the top-level admin page template that orchestrates request
-// handling (toggle/create/use-existing) and then conditionally emits each section (dependency
-// notice, save notice, password step, config block, disabled-state manage list) inline. The
-// branches map one-to-one onto template regions, so extracting them would not reduce real
-// complexity, only scatter the page layout across helpers.
+// Inherent: a top-level admin page template that emits each section (notices, chooser, connect
+// client, disabled-state manage list) inline; the branches map one-to-one onto template regions.
 // @mago-expect lint:cyclomatic-complexity
 function novamira_render_connect_page(): void
 {
@@ -1746,11 +2341,6 @@ function novamira_render_connect_page(): void
         default => null,
     };
 
-    $current_user = wp_get_current_user();
-    $username = $current_user->user_login;
-    $rest_url = rest_url('mcp/novamira');
-    $display_password = $new_password ?? $existing_password ?? 'YOUR-APP-PASSWORD';
-
     $copied_label = esc_js(__('Copied!', domain: 'novamira'));
 
     ?>
@@ -1771,6 +2361,18 @@ function novamira_render_connect_page(): void
             font-size: 18px;
             font-weight: 600;
             color: #1d2327;
+        }
+        .novamira-method-cards { display:flex; gap:12px; margin:0 0 16px; flex-wrap:wrap; }
+        .novamira-method-card {
+            flex:1 1 220px; text-align:left; cursor:pointer; padding:14px 16px;
+            border:1px solid #dcdcde; border-radius:6px; background:#fff; display:flex;
+            flex-direction:column; gap:6px;
+        }
+        .novamira-method-card.is-active { border-color:#2271b1; box-shadow:0 0 0 1px #2271b1; }
+        .novamira-method-title { font-weight:600; display:flex; align-items:center; gap:8px; }
+        .novamira-recommended-badge {
+            font-size:11px; font-weight:600; color:#00693e; background:#edfaef;
+            border-radius:10px; padding:1px 8px;
         }
         .novamira-step-badge {
             display: inline-flex;
@@ -1935,6 +2537,7 @@ function novamira_render_connect_page(): void
             background: #fff;
             border-top: 1px solid #c3c4c7;
         }
+        .novamira-panel-footer,
         .novamira-manage-passwords {
             margin: 20px 0 0;
             border-top: 1px solid #e0e0e0;
@@ -2000,15 +2603,14 @@ function novamira_render_connect_page(): void
             <?php endif; ?>
 
             <div class="novamira-connect-section">
-                <?php novamira_render_password_step($new_password, $existing_password, $existing_error); ?>
-                <?php novamira_render_manage_passwords_section(); ?>
+                <?php novamira_render_method_chooser($new_password, $existing_password, $existing_error); ?>
             </div>
 
-            <?php if ($new_password !== null || $existing_password !== null): ?>
-                <div class="novamira-connect-section">
-                    <?php novamira_render_config_section($rest_url, $username, $display_password); ?>
-                </div>
-            <?php endif; ?>
+            <div class="novamira-connect-section" id="novamira-step3"<?php echo
+                $new_password !== null || $existing_password !== null ? '' : ' hidden'
+            ; ?>>
+                <?php novamira_render_connect_client_section($new_password, $existing_password, $existing_error); ?>
+            </div>
         <?php endif; ?>
         <?php if (!$mcp_ready && novamira_get_mcp_passwords() !== []): ?>
             <?php novamira_render_manage_passwords_section(context: 'disabled'); ?>

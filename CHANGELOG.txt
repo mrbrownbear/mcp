@@ -1,4 +1,7 @@
+v1.9.1 - 2026/07/14
+* New: OAuth sign-in for AI clients. Claude and other MCP clients can connect through a standard OAuth authorization flow, approving access from your WordPress login. The Connect page walks you through each client with per-client setup steps.
 * Fix: Abilities Hub enable, disable, and bulk actions no longer fail with an "Invalid ability name" error on some sites.
+* Minor Fixes
 
 v1.9.0 - 2026/07/08
 * New: Novamira Chat, an AI agent that lives inside your WordPress dashboard. Describe what you want in plain language and it makes the change, showing you exactly what it will do and asking for your approval first. It runs on your own AI provider key, so there is no subscription and you pay only for what the AI uses. Use it on a staging site with backups. Requires WordPress 7 and your own AI provider API key.

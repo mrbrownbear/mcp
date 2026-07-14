@@ -1,0 +1,143 @@
+<?php
+
+// SPDX-FileCopyrightText: 2026 Ovation S.r.l. <dev@novamira.ai>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+declare(strict_types=1);
+
+namespace Novamira\OAuth\Repositories;
+
+use League\OAuth2\Server\Entities\ClientEntityInterface;
+use League\OAuth2\Server\Entities\Traits\ClientTrait;
+use League\OAuth2\Server\Entities\Traits\EntityTrait;
+use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
+
+if (!defined('ABSPATH')) {
+    exit();
+}
+
+// @mago-expect lint:single-class-per-file
+// ClientEntity and ClientRepository are tightly coupled and intentionally in the same file.
+final class ClientEntity implements ClientEntityInterface
+{
+    use ClientTrait;
+    use EntityTrait;
+
+    public function setName(string $name): void
+    {
+        $this->name = $name;
+    }
+
+    /** @param list<string> $uris */
+    public function setRedirectUri(array $uris): void
+    {
+        $this->redirectUri = $uris;
+    }
+
+    public function setIsConfidential(bool $v): void
+    {
+        $this->isConfidential = $v;
+    }
+}
+
+final class ClientRepository implements ClientRepositoryInterface
+{
+    /** @param list<string> $redirect_uris */
+    public function create(string $client_name, array $redirect_uris, string $registered_by_ip): string
+    {
+        // @mago-expect lint:no-global
+        global $wpdb;
+        /** @var \wpdb $wpdb */
+        $client_id = bin2hex(random_bytes(16));
+        $wpdb->insert($wpdb->prefix . 'novamira_oauth_clients', [
+            'client_id' => $client_id,
+            'client_name' => $client_name,
+            'redirect_uris' => wp_json_encode($redirect_uris),
+            'is_confidential' => 0,
+            'client_secret_hash' => null,
+            'created_at' => gmdate('Y-m-d H:i:s'),
+            'last_used_at' => null,
+            'registered_by_ip_hash' => hash('sha256', $registered_by_ip),
+        ]);
+        return $client_id;
+    }
+
+    public function getClientEntity(mixed $clientIdentifier): ?ClientEntityInterface
+    {
+        // League's 8.5 ClientRepositoryInterface declares this parameter untyped, so the
+        // signature must widen to mixed; narrow back to string for the query below.
+        $clientIdentifier = (string) $clientIdentifier;
+        // @mago-expect lint:no-global
+        global $wpdb;
+        /** @var \wpdb $wpdb */
+        // @mago-expect analysis:possibly-invalid-argument
+        // @mago-expect analysis:non-existent-constant
+        // @mago-expect analysis:mixed-argument
+        // @mago-expect analysis:possibly-invalid-argument
+        $row = $wpdb->get_row($wpdb->prepare("SELECT client_id, client_name, redirect_uris, is_confidential
+                 FROM {$wpdb->prefix}novamira_oauth_clients
+                 WHERE client_id = %s", $clientIdentifier), ARRAY_A);
+        if ($row === null) {
+            return null;
+        }
+        $entity = new ClientEntity();
+        // @mago-expect analysis:invalid-array-access
+        $entity->setIdentifier($row['client_id']);
+        // @mago-expect analysis:invalid-array-access
+        // @mago-expect analysis:mixed-argument
+        $entity->setName($row['client_name']);
+        /** @var list<string> $uris */
+        // @mago-expect analysis:invalid-array-access
+        // @mago-expect analysis:mixed-argument
+        $uris = json_decode($row['redirect_uris'], associative: true);
+        $entity->setRedirectUri($uris);
+        // @mago-expect analysis:invalid-array-access
+        // @mago-expect analysis:mixed-operand
+        $entity->setIsConfidential((bool) $row['is_confidential']);
+        return $entity;
+    }
+
+    public function validateClient(mixed $clientIdentifier, mixed $clientSecret, mixed $grantType): bool
+    {
+        return $this->getClientEntity($clientIdentifier) !== null;
+    }
+
+    public function touchLastUsed(string $client_id): void
+    {
+        // @mago-expect lint:no-global
+        global $wpdb;
+        /** @var \wpdb $wpdb */
+        $wpdb->update(
+            $wpdb->prefix . 'novamira_oauth_clients',
+            ['last_used_at' => gmdate('Y-m-d H:i:s')],
+            ['client_id' => $client_id],
+        );
+    }
+
+    public function revoke(string $client_id): void
+    {
+        // @mago-expect lint:no-global
+        global $wpdb;
+        /** @var \wpdb $wpdb */
+        $wpdb->delete($wpdb->prefix . 'novamira_oauth_clients', ['client_id' => $client_id]);
+    }
+
+    /**
+     * @return list<array{client_id: string, client_name: string, created_at: string, last_used_at: string|null}>
+     */
+    public function list_recent(int $limit = 50): array
+    {
+        // @mago-expect lint:no-global
+        global $wpdb;
+        /** @var \wpdb $wpdb */
+        // @mago-expect analysis:possibly-invalid-argument
+        // @mago-expect analysis:non-existent-constant
+        // @mago-expect analysis:mixed-argument
+        // @mago-expect analysis:possibly-invalid-argument
+        $rows = $wpdb->get_results($wpdb->prepare("SELECT client_id, client_name, created_at, last_used_at
+                 FROM {$wpdb->prefix}novamira_oauth_clients
+                 ORDER BY created_at DESC LIMIT %d", $limit), ARRAY_A);
+        // @mago-expect analysis:invalid-return-statement
+        return $rows === null ? [] : $rows;
+    }
+}

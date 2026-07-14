@@ -9,4 +9,6 @@ define('ABSPATH', '/');
 define('WP_CONTENT_DIR', '/wp-content');
 define('WP_PLUGIN_DIR', '/wp-content/plugins');
 define('WPINC', 'wp-includes');
+define('MINUTE_IN_SECONDS', 60);
 define('HOUR_IN_SECONDS', 3600);
+define('DAY_IN_SECONDS', 86400);

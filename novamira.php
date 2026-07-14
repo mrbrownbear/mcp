@@ -9,7 +9,7 @@ declare(strict_types=1);
  * Plugin Name: Novamira
  * Plugin URI: https://www.novamira.ai
  * Description: MCP server that gives AI agents full access to WordPress through PHP execution and filesystem operations. For development and staging environments only.
- * Version: 1.9.0
+ * Version: 1.9.1
  * Requires at least: 6.9
  * Requires PHP: 8.0
  * Author: Dynamic.ooo
@@ -37,7 +37,7 @@ if (!defined('ABSPATH')) {
     exit();
 }
 
-define(constant_name: 'NOVAMIRA_VERSION', value: '1.9.0');
+define(constant_name: 'NOVAMIRA_VERSION', value: '1.9.1');
 define(constant_name: 'NOVAMIRA_MAX_EXECUTION_TIME', value: 30);
 define('NOVAMIRA_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('NOVAMIRA_SANDBOX_DIR', WP_CONTENT_DIR . '/novamira-sandbox/');
@@ -254,6 +254,7 @@ require_once __DIR__ . '/includes/pro-upsell.php';
 require_once __DIR__ . '/includes/upload-link.php';
 require_once __DIR__ . '/includes/admin-access-link.php';
 require_once __DIR__ . '/includes/skills/bootstrap.php';
+require_once __DIR__ . '/includes/oauth/bootstrap.php';
 require_once __DIR__ . '/includes/instructions-admin.php';
 
 \Novamira\Context\boot_context_admin();
@@ -650,6 +651,12 @@ if ($is_enabled) {
     // /wp-json/mcp/mcp-adapter-default-server keep working after the rename.
     add_action('mcp_adapter_init', callback: 'novamira_register_legacy_mcp_server', priority: 20);
 
+    // Register the OAuth-only server at /mcp/novamira-oauth. Keeping the OAuth Bearer flow on a
+    // route of its own means the OAuth middleware never touches the canonical /mcp/novamira
+    // endpoint that the existing Application Password installs use. Gated on the same transport
+    // check as the OAuth bootstrap so the endpoint never exists without its token/authorize peers.
+    add_action('mcp_adapter_init', callback: 'novamira_register_oauth_mcp_server', priority: 20);
+
     // Initialize bundled MCP Adapter — its default server exposes our abilities automatically.
     if (!novamira_initialize_mcp_adapter()) {
         $is_enabled = false;
@@ -673,12 +680,65 @@ function novamira_register_legacy_mcp_server(mixed $adapter): void
         return;
     }
 
+    novamira_create_mirror_mcp_server(
+        $adapter,
+        server_id: 'mcp-adapter-default-server',
+        route: 'mcp-adapter-default-server',
+        name: 'Novamira (legacy alias)',
+        description: 'Legacy alias for the Novamira MCP server. New client configurations should use /wp-json/mcp/novamira.',
+    );
+}
+
+/**
+ * Register the OAuth-authenticated Novamira MCP server at `/mcp/novamira-oauth`.
+ *
+ * The OAuth Bearer flow lives on this dedicated route so the canonical `/mcp/novamira` endpoint —
+ * used by the existing Application Password installs — is never seen by the OAuth challenge
+ * middleware (see includes/oauth/middleware.php::is_mcp_route). Registered only when the OAuth
+ * transport is permitted, mirroring includes/oauth/bootstrap.php so the endpoint never exists
+ * without the token/authorize endpoints that make it usable.
+ */
+function novamira_register_oauth_mcp_server(mixed $adapter): void
+{
+    if (!$adapter instanceof \WP\MCP\Core\McpAdapter) {
+        return;
+    }
+
+    if (!novamira_oauth_transport_allowed()) {
+        return;
+    }
+
+    if ($adapter->get_server('novamira') === null) {
+        return;
+    }
+
+    novamira_create_mirror_mcp_server(
+        $adapter,
+        server_id: 'novamira-oauth',
+        route: 'novamira-oauth',
+        name: 'Novamira (OAuth)',
+        description: 'OAuth-authenticated Novamira MCP endpoint. Application Password clients use /wp-json/mcp/novamira.',
+    );
+}
+
+/**
+ * Create an MCP server that mirrors the canonical Novamira server — same tools, resources, and
+ * prompts — under a different id and route. Shared by the legacy alias and the OAuth endpoint so
+ * neither drifts from the default server's exposed abilities.
+ */
+function novamira_create_mirror_mcp_server(
+    \WP\MCP\Core\McpAdapter $adapter,
+    string $server_id,
+    string $route,
+    string $name,
+    string $description,
+): void {
     $adapter->create_server(
-        'mcp-adapter-default-server',
+        $server_id,
         'mcp',
-        'mcp-adapter-default-server',
-        'Novamira (legacy alias)',
-        'Legacy alias for the Novamira MCP server. New client configurations should use /wp-json/mcp/novamira.',
+        $route,
+        $name,
+        $description,
         'v1.0.0',
         [\WP\MCP\Transport\HttpTransport::class],
         \WP\MCP\Infrastructure\ErrorHandling\ErrorLogMcpErrorHandler::class,

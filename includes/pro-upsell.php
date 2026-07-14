@@ -186,7 +186,7 @@ add_action(
         if (novamira_pro_is_active()) {
             return;
         }
-        // @mago-expect lint:no-global -- $submenu is WP core's only mutable handle for adding an external-URL submenu item.
+        // @mago-expect lint:no-global
         global $submenu;
         if (!is_array($submenu) || !is_array($submenu['novamira-connect'] ?? null)) {
             return;
