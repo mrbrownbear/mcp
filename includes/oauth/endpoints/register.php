@@ -30,14 +30,16 @@ function register(): void
 function handle(WP_REST_Request $req): WP_REST_Response|WP_Error
 {
     $client_ip = $_SERVER['REMOTE_ADDR'] ?? '';
-    ClientValidation\prune_stale_unused_clients();
+    ClientValidation\prune_dead_clients();
     if ($client_ip !== '' && !ClientValidation\check_and_increment_rate_limit($client_ip)) {
         return new WP_Error('rate_limited', 'Too many registrations', ['status' => 429]);
     }
     if ($client_ip !== '' && ClientValidation\client_count_for_ip($client_ip) >= ClientValidation\MAX_CLIENTS_PER_IP) {
         return new WP_Error('rate_limited', 'Too many registered clients from this address', ['status' => 429]);
     }
-    if (ClientValidation\client_count() >= ClientValidation\MAX_CLIENTS_PER_SITE) {
+    // Cap only live connections, not total rows: active_client_count() ignores pending registrations,
+    // which are admin-ungated, so an anonymous DCR flood can no longer exhaust the slots.
+    if (ClientValidation\active_client_count() >= ClientValidation\MAX_CLIENTS_PER_SITE) {
         return new WP_Error('cap_reached', 'Client cap reached', ['status' => 503]);
     }
 

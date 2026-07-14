@@ -21,6 +21,11 @@ const MAX_CLIENTS_PER_IP = 10;
 
 const STALE_UNUSED_CLIENT_TTL = 86_400;
 
+// A client counts as an active connection only while it has been used within the refresh-token
+// lifetime (14 days, matching P14D in server-factory.php). Past that its grant has expired, so it is
+// pruned and frees its slot instead of occupying it forever.
+const ACTIVE_CLIENT_TTL = 14 * 86_400;
+
 const MAX_REDIRECT_URI_LENGTH = 2048;
 
 /**
@@ -207,13 +212,22 @@ function within_endpoint_rate_limit(string $bucket, string $client_ip): bool
     return true;
 }
 
+/**
+ * Number of active connections: clients that completed a token exchange within the refresh-token
+ * lifetime. `last_used_at` is only set after the admin-approved authorize/consent flow, so an
+ * anonymous registration flood — which never reaches a token exchange — cannot inflate this count.
+ */
 // @mago-expect lint:no-global
 // WordPress core requires global $wpdb for database access.
-function client_count(): int
+function active_client_count(): int
 {
     global $wpdb;
     /** @var \wpdb $wpdb */
-    return (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}novamira_oauth_clients");
+    $cutoff = gmdate('Y-m-d H:i:s', time() - ACTIVE_CLIENT_TTL);
+    // @mago-expect analysis:possibly-invalid-argument
+    $sql = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}novamira_oauth_clients
+         WHERE last_used_at IS NOT NULL AND last_used_at > %s", $cutoff);
+    return is_string($sql) ? (int) $wpdb->get_var($sql) : 0;
 }
 
 // @mago-expect lint:no-global
@@ -230,16 +244,27 @@ function client_count_for_ip(string $client_ip): int
     return is_string($sql) ? (int) $wpdb->get_var($sql) : 0;
 }
 
+/**
+ * Delete clients that no longer hold a live grant so they stop occupying connection slots: pending
+ * registrations that never completed a token exchange (older than STALE_UNUSED_CLIENT_TTL), and
+ * clients not used within the refresh-token lifetime (their tokens have all expired or been revoked).
+ */
 // @mago-expect lint:no-global
 // WordPress core requires global $wpdb for database access.
-function prune_stale_unused_clients(): void
+function prune_dead_clients(): void
 {
     global $wpdb;
     /** @var \wpdb $wpdb */
-    $cutoff = gmdate('Y-m-d H:i:s', time() - STALE_UNUSED_CLIENT_TTL);
+    $pending_cutoff = gmdate('Y-m-d H:i:s', time() - STALE_UNUSED_CLIENT_TTL);
+    $used_cutoff = gmdate('Y-m-d H:i:s', time() - ACTIVE_CLIENT_TTL);
     // @mago-expect analysis:possibly-invalid-argument
-    $sql = $wpdb->prepare("DELETE FROM {$wpdb->prefix}novamira_oauth_clients
-         WHERE last_used_at IS NULL AND created_at < %s", $cutoff);
+    $sql = $wpdb->prepare(
+        "DELETE FROM {$wpdb->prefix}novamira_oauth_clients
+         WHERE (last_used_at IS NULL AND created_at < %s)
+            OR (last_used_at IS NOT NULL AND last_used_at < %s)",
+        $pending_cutoff,
+        $used_cutoff,
+    );
     if (is_string($sql)) {
         $wpdb->query($sql);
     }
