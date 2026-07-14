@@ -96,4 +96,23 @@ final class RefreshTokenRepository implements RefreshTokenRepositoryInterface
         // @mago-expect analysis:invalid-array-access
         return new DateTimeImmutable((string) $row['expires_at'] . ' UTC') < new DateTimeImmutable('now');
     }
+
+    /**
+     * Identifier hash of the access token this refresh token was issued with, or '' if the refresh
+     * token is unknown. Lets the /revoke endpoint cascade a refresh-token revocation onto its paired
+     * access token (see AccessTokenRepository::revokeGrantByAccessHash()).
+     */
+    public function accessTokenHashFor(string $refreshJti): string
+    {
+        // @mago-expect lint:no-global
+        global $wpdb;
+        /** @var \wpdb $wpdb */
+        // @mago-expect analysis:possibly-invalid-argument
+        // @mago-expect analysis:possibly-invalid-argument
+        $value = $wpdb->get_var($wpdb->prepare(
+            "SELECT access_token_hash FROM {$wpdb->prefix}novamira_oauth_refresh_tokens WHERE identifier_hash = %s",
+            hash('sha256', $refreshJti),
+        ));
+        return is_string($value) ? $value : '';
+    }
 }

@@ -114,6 +114,40 @@ final class AccessTokenRepository implements AccessTokenRepositoryInterface
         );
     }
 
+    /**
+     * Cascade-revoke a whole grant, identified by its access token's identifier hash: the access
+     * token and every refresh token paired with it (refresh_tokens.access_token_hash matches). Used
+     * by the RFC 7009 /revoke endpoint so revoking one member of the pair takes down the other — no
+     * access token surviving a refresh revoke, no refresh minting a fresh access token after an
+     * access revoke. When $requestClientId is non-empty it must match the token's owning client, so
+     * one client cannot revoke another's grant; an unresolvable owner does not block the caller.
+     */
+    public function revokeGrantByAccessHash(string $accessTokenHash, string $requestClientId): void
+    {
+        // @mago-expect lint:no-global
+        global $wpdb;
+        /** @var \wpdb $wpdb */
+        // @mago-expect analysis:possibly-invalid-argument
+        // @mago-expect analysis:possibly-invalid-argument
+        $owner = $wpdb->get_var($wpdb->prepare(
+            "SELECT client_id FROM {$wpdb->prefix}novamira_oauth_access_tokens WHERE identifier_hash = %s",
+            $accessTokenHash,
+        ));
+        if ($requestClientId !== '' && is_string($owner) && !hash_equals($owner, $requestClientId)) {
+            return;
+        }
+        $wpdb->update(
+            $wpdb->prefix . 'novamira_oauth_access_tokens',
+            ['revoked' => 1],
+            ['identifier_hash' => $accessTokenHash],
+        );
+        $wpdb->update(
+            $wpdb->prefix . 'novamira_oauth_refresh_tokens',
+            ['revoked' => 1],
+            ['access_token_hash' => $accessTokenHash],
+        );
+    }
+
     public function isAccessTokenRevoked(mixed $tokenId): bool
     {
         $tokenId = (string) $tokenId;

@@ -42,14 +42,15 @@ function handle(WP_REST_Request $req): WP_REST_Response
     if ($token === '') {
         return new WP_REST_Response(null, 200);
     }
+    $client_id = (string) ($body['client_id'] ?? '');
 
-    // Try both types per RFC 7009 §2.1 regardless of token_type_hint.
-    try_revoke_access($token);
-    try_revoke_refresh($token);
+    // Try both types per RFC 7009 §2.1 regardless of token_type_hint; each cascades onto its pair.
+    try_revoke_access($token, $client_id);
+    try_revoke_refresh($token, $client_id);
     return new WP_REST_Response(null, 200);
 }
 
-function try_revoke_access(string $token): void
+function try_revoke_access(string $token, string $clientId): void
 {
     try {
         $server = ServerFactory\build_resource_server();
@@ -57,7 +58,7 @@ function try_revoke_access(string $token): void
         $validated = $server->validateAuthenticatedRequest($fake);
         $jti = (string) $validated->getAttribute('oauth_access_token_id');
         if ($jti !== '') {
-            (new AccessTokenRepository())->revokeAccessToken($jti);
+            (new AccessTokenRepository())->revokeGrantByAccessHash(hash('sha256', $jti), $clientId);
         }
 
         // @mago-expect lint:no-empty-catch-clause
@@ -66,7 +67,7 @@ function try_revoke_access(string $token): void
     }
 }
 
-function try_revoke_refresh(string $token): void
+function try_revoke_refresh(string $token, string $clientId): void
 {
     // Our refresh tokens are hex Defuse ciphertext; skip the deliberately slow password KDF for
     // anything that cannot be one, so a flood of garbage tokens cannot force expensive decryptions.
@@ -87,7 +88,11 @@ function try_revoke_refresh(string $token): void
         if (!is_string($jti) || $jti === '') {
             return;
         }
-        (new RefreshTokenRepository())->revokeRefreshToken($jti);
+        // Cascade: resolve the paired access token and revoke both members of the grant.
+        $access_hash = (new RefreshTokenRepository())->accessTokenHashFor($jti);
+        if ($access_hash !== '') {
+            (new AccessTokenRepository())->revokeGrantByAccessHash($access_hash, $clientId);
+        }
 
         // @mago-expect lint:no-empty-catch-clause
     } catch (\Throwable $e) {
