@@ -2303,10 +2303,7 @@ function novamira_render_enable_prompt(?WP_Error $dependency_error): void
 
     ?>
     <p style="color:#666; font-size:14px;">
-        <?php esc_html_e(
-            'Enable AI Abilities above to connect your AI client.',
-            domain: 'novamira',
-        ); ?>
+        <?php esc_html_e('Enable AI Abilities above to connect your AI client.', domain: 'novamira'); ?>
     </p>
     <?php
 }
