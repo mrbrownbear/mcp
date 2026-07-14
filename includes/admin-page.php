@@ -212,7 +212,7 @@ function novamira_handle_ability_hub_actions(): void
     }
 
     $ability_name = is_string($_POST['ability_name'] ?? null)
-        ? sanitize_text_field(wp_unslash($_POST['ability_name']))
+        ? novamira_sanitize_requested_ability_name($_POST['ability_name'])
         : '';
 
     if (!novamira_is_valid_ability_name($ability_name)) {
@@ -249,7 +249,7 @@ function novamira_handle_ability_toggle_ajax(): void
     }
 
     $ability_name = is_string($_POST['ability_name'] ?? null)
-        ? sanitize_text_field(wp_unslash($_POST['ability_name']))
+        ? novamira_sanitize_requested_ability_name($_POST['ability_name'])
         : '';
 
     if (!novamira_is_valid_ability_name($ability_name) || novamira_ability_is_hub_hidden($ability_name)) {
@@ -277,8 +277,12 @@ function novamira_handle_ability_hub_bulk_action(): void
 {
     $bulk_action = novamira_get_ability_hub_bulk_action();
     $ability_names = novamira_get_ability_hub_bulk_ability_names();
-    if ($bulk_action === '' || $ability_names === []) {
-        wp_safe_redirect(admin_url('admin.php?page=novamira-abilities&novamira_result=invalid'));
+    if ($bulk_action === '') {
+        wp_safe_redirect(admin_url('admin.php?page=novamira-abilities&novamira_result=missing_bulk_action'));
+        exit();
+    }
+    if ($ability_names === []) {
+        wp_safe_redirect(admin_url('admin.php?page=novamira-abilities&novamira_result=nothing_selected'));
         exit();
     }
 
@@ -314,7 +318,7 @@ function novamira_get_ability_hub_bulk_ability_names(): array
         if (!is_string($raw_name)) {
             continue;
         }
-        $ability_name = sanitize_text_field(wp_unslash($raw_name));
+        $ability_name = novamira_sanitize_requested_ability_name($raw_name);
         if (!novamira_is_valid_ability_name($ability_name) || novamira_ability_is_hub_hidden($ability_name)) {
             continue;
         }
@@ -707,6 +711,8 @@ function novamira_render_ability_hub_result_notice(?string $result): void
         'updated' => ['success', __('Ability rule updated.', domain: 'novamira')],
         'bulk_updated' => ['success', __('Ability rules updated.', domain: 'novamira')],
         'invalid' => ['error', __('Invalid ability name.', domain: 'novamira')],
+        'missing_bulk_action' => ['error', __('Choose a bulk action.', domain: 'novamira')],
+        'nothing_selected' => ['error', __('Select at least one ability.', domain: 'novamira')],
         default => null,
     };
 

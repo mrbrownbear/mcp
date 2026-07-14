@@ -737,6 +737,20 @@ function novamira_is_valid_ability_name(string $ability_name): bool
     return preg_match('/^[a-z0-9-]+\/[a-z0-9-\/]+$/', $ability_name) === 1;
 }
 
+/**
+ * Normalize an ability name received from a request before validating it.
+ *
+ * PHP normally URL-decodes form fields while populating $_POST. Some proxies
+ * and security plugins can re-encode a value, leaving the namespacing slash as
+ * "%2F". Decode that transport encoding before sanitize_text_field() removes
+ * percent-encoded octets altogether. The strict ability-name validator remains
+ * the authority on whether the resulting value is accepted.
+ */
+function novamira_sanitize_requested_ability_name(string $ability_name): string
+{
+    return sanitize_text_field(rawurldecode(wp_unslash($ability_name)));
+}
+
 function novamira_ability_is_hub_protected(string $ability_name): bool
 {
     return str_starts_with($ability_name, 'mcp-adapter/');
