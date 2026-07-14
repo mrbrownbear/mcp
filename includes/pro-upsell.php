@@ -36,61 +36,75 @@ function novamira_pro_is_active(): bool
  * The `category` keys group entries for the generic fallback copy; see
  * novamira_pro_integration_groups().
  *
- * @return list<array{label: string, category: string, detect: callable(): bool}>
+ * Each entry declares one of `constant` / `class` / `function`; presence of that symbol means the
+ * plugin or theme is active (see novamira_pro_integration_active()).
+ *
+ * @return list<array{label: string, category: string, constant?: string, class?: string, function?: string}>
  */
+// @mago-expect lint:halstead
 function novamira_pro_integration_catalog(): array
 {
     return [
-        [
-            'label' => 'Elementor',
-            'category' => 'builder',
-            'detect' => static fn(): bool => defined('ELEMENTOR_VERSION'),
-        ],
-        ['label' => 'Bricks', 'category' => 'builder', 'detect' => static fn(): bool => defined('BRICKS_VERSION')],
-        ['label' => 'Divi', 'category' => 'builder', 'detect' => static fn(): bool => defined('ET_BUILDER_VERSION')],
-        [
-            'label' => 'Breakdance',
-            'category' => 'builder',
-            'detect' => static fn(): bool => function_exists('Breakdance\\Data\\get_global_option'),
-        ],
-        ['label' => 'WPBakery', 'category' => 'builder', 'detect' => static fn(): bool => defined('WPB_VC_VERSION')],
-        ['label' => 'Etch', 'category' => 'builder', 'detect' => static fn(): bool => class_exists('Etch\\Plugin')],
-        [
-            'label' => 'GeneratePress',
-            'category' => 'builder',
-            'detect' => static fn(): bool => function_exists('generate_get_option'),
-        ],
-        [
-            'label' => 'Kadence',
-            'category' => 'builder',
-            'detect' => static fn(): bool => class_exists('Kadence\\Theme'),
-        ],
-        [
-            'label' => 'Mosaic',
-            'category' => 'builder',
-            'detect' => static fn(): bool => class_exists('Mosaic\\Database\\MosaicDB'),
-        ],
-        ['label' => 'ACF', 'category' => 'content', 'detect' => static fn(): bool => class_exists('ACF')],
-        [
-            'label' => 'JetEngine',
-            'category' => 'content',
-            'detect' => static fn(): bool => function_exists('jet_engine'),
-        ],
-        ['label' => 'Meta Box', 'category' => 'content', 'detect' => static fn(): bool => defined('RWMB_VER')],
-        ['label' => 'Pods', 'category' => 'content', 'detect' => static fn(): bool => defined('PODS_VERSION')],
-        ['label' => 'ACPT', 'category' => 'content', 'detect' => static fn(): bool => defined('ACPT_PLUGIN_VERSION')],
-        ['label' => 'ASE', 'category' => 'content', 'detect' => static fn(): bool => defined('ASENHA_VERSION')],
-        [
-            'label' => 'WooCommerce',
-            'category' => 'commerce',
-            'detect' => static fn(): bool => class_exists('WooCommerce'),
-        ],
-        [
-            'label' => 'Code Snippets',
-            'category' => 'dev',
-            'detect' => static fn(): bool => defined('CODE_SNIPPETS_VERSION'),
-        ],
+        // Page builders, themes, and block libraries.
+        ['label' => 'Elementor', 'category' => 'builder', 'constant' => 'ELEMENTOR_VERSION'],
+        ['label' => 'Bricks Builder', 'category' => 'builder', 'constant' => 'BRICKS_VERSION'],
+        ['label' => 'Bricksforge', 'category' => 'builder', 'constant' => 'BRICKSFORGE_VERSION'],
+        ['label' => 'Divi 5', 'category' => 'builder', 'constant' => 'ET_BUILDER_VERSION'],
+        ['label' => 'WPBakery Page Builder', 'category' => 'builder', 'constant' => 'WPB_VC_VERSION'],
+        ['label' => 'Breakdance', 'category' => 'builder', 'function' => 'Breakdance\\Data\\get_global_option'],
+        ['label' => 'Mosaic', 'category' => 'builder', 'class' => 'Mosaic\\Database\\MosaicDB'],
+        ['label' => 'Etch', 'category' => 'builder', 'class' => 'Etch\\Plugin'],
+        ['label' => 'Beaver Builder', 'category' => 'builder', 'class' => 'FLBuilderModel'],
+        ['label' => 'GeneratePress', 'category' => 'builder', 'function' => 'generate_get_option'],
+        ['label' => 'GenerateBlocks', 'category' => 'builder', 'constant' => 'GENERATEBLOCKS_VERSION'],
+        ['label' => 'Kadence', 'category' => 'builder', 'class' => 'Kadence\\Theme'],
+        ['label' => 'Kadence Blocks', 'category' => 'builder', 'constant' => 'KADENCE_BLOCKS_VERSION'],
+        // Custom fields and content modeling.
+        ['label' => 'Advanced Custom Fields', 'category' => 'content', 'class' => 'ACF'],
+        ['label' => 'JetEngine', 'category' => 'content', 'function' => 'jet_engine'],
+        ['label' => 'Meta Box', 'category' => 'content', 'constant' => 'RWMB_VER'],
+        ['label' => 'Pods', 'category' => 'content', 'constant' => 'PODS_VERSION'],
+        ['label' => 'ACPT', 'category' => 'content', 'constant' => 'ACPT_PLUGIN_VERSION'],
+        ['label' => 'ASE', 'category' => 'content', 'constant' => 'ASENHA_VERSION'],
+        // SEO.
+        ['label' => 'Yoast SEO', 'category' => 'seo', 'constant' => 'WPSEO_VERSION'],
+        ['label' => 'Rank Math SEO', 'category' => 'seo', 'constant' => 'RANK_MATH_VERSION'],
+        ['label' => 'All in One SEO', 'category' => 'seo', 'constant' => 'AIOSEO_VERSION'],
+        ['label' => 'SeoPress', 'category' => 'seo', 'constant' => 'SEOPRESS_VERSION'],
+        // Forms.
+        ['label' => 'Contact Form 7', 'category' => 'forms', 'constant' => 'WPCF7_VERSION'],
+        ['label' => 'WPForms', 'category' => 'forms', 'constant' => 'WPFORMS_VERSION'],
+        ['label' => 'Gravity Forms', 'category' => 'forms', 'class' => 'GFForms'],
+        ['label' => 'Fluent Forms', 'category' => 'forms', 'constant' => 'FLUENTFORM_VERSION'],
+        ['label' => 'Formidable Forms', 'category' => 'forms', 'class' => 'FrmAppHelper'],
+        ['label' => 'Ninja Forms', 'category' => 'forms', 'class' => 'Ninja_Forms'],
+        // Commerce, dev tools, dynamic content.
+        ['label' => 'WooCommerce', 'category' => 'commerce', 'class' => 'WooCommerce'],
+        ['label' => 'Code Snippets', 'category' => 'dev', 'constant' => 'CODE_SNIPPETS_VERSION'],
+        ['label' => 'Dynamic Shortcodes', 'category' => 'dynamic', 'constant' => 'DYNAMIC_SHORTCODES_VERSION'],
     ];
+}
+
+/**
+ * Whether the integration's plugin or theme is active, detected by the presence of the constant,
+ * class, or function its catalog entry declares.
+ *
+ * @param array{label: string, category: string, constant?: string, class?: string, function?: string} $integration
+ */
+function novamira_pro_integration_active(array $integration): bool
+{
+    $constant = $integration['constant'] ?? '';
+    $class = $integration['class'] ?? '';
+    $function = $integration['function'] ?? '';
+
+    return (
+        $constant !== ''
+        && defined($constant)
+        || $class !== ''
+        && class_exists($class)
+        || $function !== ''
+        && function_exists($function)
+    );
 }
 
 /**
@@ -103,7 +117,7 @@ function novamira_pro_active_integrations(): array
 {
     $active = [];
     foreach (novamira_pro_integration_catalog() as $integration) {
-        if (!$integration['detect']()) {
+        if (!novamira_pro_integration_active($integration)) {
             continue;
         }
         $active[] = $integration['label'];
@@ -124,8 +138,11 @@ function novamira_pro_integration_groups(): string
     $group_labels = [
         'builder' => __('page builders', domain: 'novamira'),
         'content' => __('custom fields plugins', domain: 'novamira'),
+        'seo' => __('SEO plugins', domain: 'novamira'),
+        'forms' => __('form plugins', domain: 'novamira'),
         'commerce' => '',
         'dev' => '',
+        'dynamic' => '',
     ];
 
     /** @var array<string, list<string>> $labels_by_category */
