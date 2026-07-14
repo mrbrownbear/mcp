@@ -50,6 +50,12 @@ function register_rest_routes(): void
         'permission_callback' => __NAMESPACE__ . '\\rest_can_access_batch',
     ]);
 
+    register_rest_route(route_namespace: 'novamira/v1', route: '/gutenberg/batches/claim-next', args: [
+        'methods' => 'POST',
+        'callback' => __NAMESPACE__ . '\\rest_claim_next_batch',
+        'permission_callback' => __NAMESPACE__ . '\\rest_can_access_dashboard',
+    ]);
+
     register_rest_route(
         route_namespace: 'novamira/v1',
         route: '/gutenberg/batches/(?P<batch_id>\d+)/items/claim-next',
@@ -365,6 +371,39 @@ function rest_flush_sse(): void
 function rest_claim_batch(WP_REST_Request $request): WP_REST_Response|WP_Error
 {
     return rest_response(claim_batch(rest_int_param($request, name: 'batch_id')));
+}
+
+/** @return WP_REST_Response|WP_Error */
+function rest_claim_next_batch(): WP_REST_Response|WP_Error
+{
+    mark_stale_drafts();
+
+    foreach (get_batches([STATUS_READY, STATUS_FAILED], posts_per_page: 50) as $batch) {
+        $batch = refresh_batch_runtime_state($batch);
+        if (!current_user_can_finalize_batch($batch)) {
+            continue;
+        }
+
+        $claim = claim_batch($batch->ID);
+        if (!is_wp_error($claim)) {
+            return new WP_REST_Response([
+                'done' => false,
+                'claim' => $claim,
+            ]);
+        }
+
+        if (in_array(
+            $claim->get_error_code(),
+            ['gutenberg_batch_claim_raced', 'gutenberg_batch_not_claimable'],
+            strict: true,
+        )) {
+            continue;
+        }
+
+        return $claim;
+    }
+
+    return new WP_REST_Response(['done' => true]);
 }
 
 /** @return WP_REST_Response|WP_Error */

@@ -536,7 +536,7 @@ function gutenberg_finalizer_script(): string
                 setNotice( 'error', 'Something needs attention. Return to the agent.' );
             };
 
-            const processBatch = async ( batchId ) => {
+            const processBatch = async ( batchId, initialClaim = null ) => {
                 const activeBatchId = Number( batchId || 0 );
                 if ( ! activeBatchId ) {
                     return false;
@@ -549,7 +549,7 @@ function gutenberg_finalizer_script(): string
                 try {
                     clearNotice();
                     setProgress( 'Working on queued Gutenberg changes...' );
-                    const claim = await apiFetch( {
+                    const claim = initialClaim || await apiFetch( {
                         path: path( `/gutenberg/batches/${ activeBatchId }/claim` ),
                         method: 'POST',
                     } );
@@ -642,15 +642,6 @@ function gutenberg_finalizer_script(): string
                 return true;
             };
 
-            const refreshDashboardBatches = async () => {
-                const response = await apiFetch( {
-                    path: path( '/gutenberg/batches?status=ready,failed' ),
-                    method: 'GET',
-                } );
-
-                return Array.isArray( response.batches ) ? response.batches : [];
-            };
-
             const processDashboardQueue = async () => {
                 if ( dashboardPollRunning || isRunning ) {
                     return;
@@ -659,9 +650,11 @@ function gutenberg_finalizer_script(): string
                 dashboardPollRunning = true;
                 try {
                     await heartbeat();
-                    const batches = await refreshDashboardBatches();
-                    const batch = batches.find( ( item ) => [ 'ready', 'failed' ].includes( item.status ) );
-                    if ( ! batch ) {
+                    const next = await apiFetch( {
+                        path: path( '/gutenberg/batches/claim-next' ),
+                        method: 'POST',
+                    } );
+                    if ( next.done || ! next.claim || ! next.claim.batch ) {
                         clearNotice();
                         setProgress( 'Nothing to do. The queue is ready.' );
                         return;
@@ -669,7 +662,7 @@ function gutenberg_finalizer_script(): string
 
                     clearNotice();
                     setProgress( 'Working on queued Gutenberg changes...' );
-                    await processBatch( batch.batch_id );
+                    await processBatch( next.claim.batch.batch_id, next.claim );
                 } catch ( error ) {
                     setNotice( 'error', 'Queue disconnected. Reload this page.' );
                     setProgress( 'Queue disconnected. Reload this page.' );
