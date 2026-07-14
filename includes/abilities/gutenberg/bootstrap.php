@@ -1487,10 +1487,15 @@ function commit_prepared_items(WP_Post $batch, array $prepared_items): array|WP_
             return conflict_prepared_item($item);
         }
 
-        $updated = wp_update_post([
-            'ID' => $target->ID,
-            'post_content' => meta_string($item->ID, META_FINALIZED_CONTENT),
-        ], wp_error: true);
+        $updated = wp_update_post(
+            [
+                'ID' => $target->ID,
+                // Slash before the write: wp_update_post() wp_unslash()es post data, which would strip a
+                // backslash level from the \uXXXX escapes in the finalized block markup.
+                'post_content' => wp_slash(meta_string($item->ID, META_FINALIZED_CONTENT)),
+            ],
+            wp_error: true,
+        );
 
         if (is_wp_error($updated)) {
             $restored = restore_written_prepared_items($written_items);
@@ -1538,10 +1543,15 @@ function restore_written_prepared_items(array $written_items): bool
             continue;
         }
 
-        $updated = wp_update_post([
-            'ID' => $target->ID,
-            'post_content' => meta_string($item->ID, META_BASE_CONTENT),
-        ], wp_error: true);
+        $updated = wp_update_post(
+            [
+                'ID' => $target->ID,
+                // Slash before the write (see the finalize path) so the restored base content is
+                // byte-identical, \uXXXX escapes included.
+                'post_content' => wp_slash(meta_string($item->ID, META_BASE_CONTENT)),
+            ],
+            wp_error: true,
+        );
 
         if (is_wp_error($updated)) {
             $restored = false;

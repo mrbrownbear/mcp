@@ -107,10 +107,15 @@ function gutenberg_write_content(array $input): array|WP_Error
     }
 
     $content = serialize_dynamic_blocks($blocks);
-    $updated = wp_update_post([
-        'ID' => $target->ID,
-        'post_content' => $content,
-    ], wp_error: true);
+    $updated = wp_update_post(
+        [
+            'ID' => $target->ID,
+            // wp_update_post() wp_unslash()es the post data internally, so slash first to keep the
+            // \uXXXX escapes in the serialized block markup byte-identical.
+            'post_content' => wp_slash($content),
+        ],
+        wp_error: true,
+    );
 
     if (is_wp_error($updated)) {
         return $updated;
