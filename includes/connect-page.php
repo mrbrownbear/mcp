@@ -2304,7 +2304,7 @@ function novamira_render_enable_prompt(?WP_Error $dependency_error): void
     ?>
     <p style="color:#666; font-size:14px;">
         <?php esc_html_e(
-            'Enable AI Abilities above to create application passwords and connect an MCP client.',
+            'Enable AI Abilities above to connect your AI client.',
             domain: 'novamira',
         ); ?>
     </p>
