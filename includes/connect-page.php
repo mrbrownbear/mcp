@@ -1658,8 +1658,8 @@ function novamira_build_standard_configs(string $mcp_servers_json, string $vscod
             'code' => $mcp_servers_json,
             'hint' => sprintf($add_to, '<code>mcp_config.json</code>'),
             'paths' => [
-                'macOS / Linux' => '~/.gemini/antigravity/mcp_config.json',
-                'Windows' => '%USERPROFILE%\\.gemini\\antigravity\\mcp_config.json',
+                'macOS / Linux' => '~/.gemini/config/mcp_config.json',
+                'Windows' => '%USERPROFILE%\\.gemini\\config\\mcp_config.json',
             ],
             'isShell' => false,
         ],

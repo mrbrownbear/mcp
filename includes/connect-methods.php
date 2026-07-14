@@ -482,8 +482,8 @@ function novamira_build_oauth_bridge_standard(string $mcp_servers_json, string $
             ],
         ),
         'antigravity' => novamira_oauth_code_entry($mcp_servers_json, novamira_oauth_add_to('mcp_config.json'), [
-            'macOS / Linux' => '~/.gemini/antigravity/mcp_config.json',
-            'Windows' => '%USERPROFILE%\\.gemini\\antigravity\\mcp_config.json',
+            'macOS / Linux' => '~/.gemini/config/mcp_config.json',
+            'Windows' => '%USERPROFILE%\\.gemini\\config\\mcp_config.json',
         ]),
         'cursor' => novamira_oauth_code_entry($mcp_servers_json, novamira_oauth_add_to('mcp.json'), [
             __('Global', domain: 'novamira') => '~/.cursor/mcp.json',
