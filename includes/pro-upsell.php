@@ -126,42 +126,35 @@ function novamira_pro_active_integrations(): array
 }
 
 /**
- * The full catalog rendered as grouped prose for the generic (no-match) copy,
- * e.g. "page builders (Elementor, Bricks, …), custom fields plugins (ACF, …),
- * WooCommerce, and Code Snippets". Built from the catalog so every integration
- * is named in exactly one place.
+ * Short, category-level summary of what Pro specializes in, for the generic (no-match) copy:
+ * e.g. "page builders, custom fields plugins, SEO plugins, form plugins, and more". Kept brief so
+ * the fallback blurb never enumerates all the integrations; the single-entry categories
+ * (WooCommerce, Code Snippets, Dynamic Shortcodes) and future specializations fall under "more".
  */
 function novamira_pro_integration_groups(): string
 {
-    // Category render order and prefix. An empty prefix lists the labels bare
-    // (used for single-entry categories like WooCommerce / Code Snippets).
     $group_labels = [
         'builder' => __('page builders', domain: 'novamira'),
         'content' => __('custom fields plugins', domain: 'novamira'),
         'seo' => __('SEO plugins', domain: 'novamira'),
         'forms' => __('form plugins', domain: 'novamira'),
-        'commerce' => '',
-        'dev' => '',
-        'dynamic' => '',
     ];
 
-    /** @var array<string, list<string>> $labels_by_category */
-    $labels_by_category = [];
+    $present = [];
     foreach (novamira_pro_integration_catalog() as $integration) {
-        $labels_by_category[$integration['category']][] = $integration['label'];
+        $present[$integration['category']] = true;
     }
 
-    $segments = [];
-    foreach ($group_labels as $category => $prefix) {
-        $labels = $labels_by_category[$category] ?? [];
-        if ($labels === []) {
+    $names = [];
+    foreach ($group_labels as $category => $label) {
+        if (!($present[$category] ?? false)) {
             continue;
         }
-        $list = wp_sprintf('%l', $labels);
-        $segments[] = $prefix === '' ? $list : sprintf('%s (%s)', $prefix, $list);
+        $names[] = $label;
     }
+    $names[] = __('more', domain: 'novamira');
 
-    return wp_sprintf('%l', $segments);
+    return wp_sprintf('%l', $names);
 }
 
 /**
