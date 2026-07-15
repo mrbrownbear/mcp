@@ -1,3 +1,11 @@
+v1.9.2 - 2026/07/15
+* New: ChatGPT support. Connect ChatGPT to your site with OAuth sign-in through its developer-mode custom connector.
+* Tweak: Overwriting a post through the Gutenberg pending-change flow is now treated as a destructive action, so your AI client asks before replacing content.
+* Tweak: Reading skills can no longer be turned off, so your skills always stay available even when other abilities are disabled.
+* Tweak: Calling an ability you've turned off now reports that it is switched off and can be re-enabled, instead of a confusing "not found".
+* Fix: Saving Gutenberg content no longer strips backslashes, which could corrupt blocks that rely on escaped characters.
+* Minor Fixes
+
 v1.9.1 - 2026/07/14
 * New: OAuth sign-in for AI clients. Claude and other MCP clients can connect through a standard OAuth authorization flow, approving access from your WordPress login. The Connect page walks you through each client with per-client setup steps.
 * Fix: Abilities Hub enable, disable, and bulk actions no longer fail with an "Invalid ability name" error on some sites.
