@@ -606,41 +606,19 @@ function novamira_likely_local_http(): bool
 }
 
 /**
- * Heuristic: is this site likely served from an HTTPS endpoint with a self-signed certificate?
+ * Heuristic: is this site likely served over HTTPS with a certificate the mcp-remote bridge will
+ * not trust (a self-signed cert, or a local CA like mkcert that Node ignores by default)?
  *
- * LocalWP, DDEV, Lando and similar dev tools commonly serve `.local` / `.test` hostnames over
- * HTTPS with self-signed certs. The @automattic/mcp-wordpress-remote npx package rejects such
- * certs by default, so the MCP client cannot connect unless `NODE_TLS_REJECT_UNAUTHORIZED=0` is
- * passed in the env. Detecting this lets us inject that env var and warn the user about the trade.
+ * LocalWP, DDEV, Lando and similar dev tools commonly serve local hostnames over HTTPS with such
+ * certs, which the bridge rejects unless `NODE_TLS_REJECT_UNAUTHORIZED=0` is passed in the env.
+ * Any HTTPS host that is only reachable locally is treated this way, mirroring the bridge decision
+ * in novamira_build_oauth_configs(): this covers single-label hosts (e.g. "site") and private-IP
+ * literals too, not only the `.local` / `.test`-style suffixes, so no local HTTPS site is left
+ * without the bypass it needs.
  */
 function novamira_likely_self_signed_https(): bool
 {
-    $home = home_url();
-    if (!str_starts_with(strtolower($home), 'https://')) {
-        return false;
-    }
-
-    $host = strtolower((string) wp_parse_url($home, PHP_URL_HOST));
-    if ($host === '') {
-        return false;
-    }
-
-    /** @var array<int, string> $self_signed_substrings */
-    $self_signed_substrings = apply_filters('novamira_self_signed_host_patterns', [
-        '.local',
-        '.test',
-        'localhost',
-        '.lndo.site',
-        '.ddev.site',
-    ]);
-
-    foreach ($self_signed_substrings as $needle) {
-        if ($needle !== '' && str_contains($host, $needle)) {
-            return true;
-        }
-    }
-
-    return false;
+    return str_starts_with(strtolower(home_url()), 'https://') && novamira_host_unreachable_from_cloud();
 }
 
 /**

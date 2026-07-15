@@ -154,14 +154,15 @@ function novamira_oauth_json(string $wrapper, string $mcp_name, array $server): 
 }
 
 /**
- * Build a plain code-snippet client entry (no shell, no connector button).
+ * Build a plain code-snippet client entry (no shell, no connector button). The optional note is
+ * extra HTML rendered under the snippet (e.g. a CLI alternative); empty means none.
  *
  * @param array<string, string> $paths
  * @return array<string, mixed>
  */
-function novamira_oauth_code_entry(string $code, string $hint, array $paths): array
+function novamira_oauth_code_entry(string $code, string $hint, array $paths, string $note = ''): array
 {
-    return ['kind' => 'code', 'code' => $code, 'hint' => $hint, 'paths' => $paths, 'isShell' => false];
+    return ['kind' => 'code', 'code' => $code, 'hint' => $hint, 'paths' => $paths, 'isShell' => false, 'note' => $note];
 }
 
 /**
@@ -213,6 +214,63 @@ function novamira_oauth_bridge_claude_code(string $mcp_name, string $mcp_url, ar
 }
 
 /**
+ * Steps for ChatGPT's developer-mode custom connector: turn on developer mode, create a connector,
+ * paste the OAuth server URL. ChatGPT reaches the server from OpenAI's cloud, so this is only
+ * offered on a publicly reachable site (see novamira_build_oauth_configs()).
+ *
+ * @return list<array<string, string>>
+ */
+function novamira_oauth_chatgpt_steps(string $mcp_name, string $mcp_url): array
+{
+    return [
+        [
+            'title' => __('Enable developer mode', domain: 'novamira'),
+            'body' => __(
+                'In ChatGPT, open Settings, go to Apps & Connectors, and turn on Developer mode under Advanced settings.',
+                domain: 'novamira',
+            ),
+        ],
+        [
+            'title' => __('Create a connector', domain: 'novamira'),
+            'body' => __(
+                'Under Apps & Connectors, create a new connector and give it this name, or one you’ll recognize with "Novamira" in it:',
+                domain: 'novamira',
+            ),
+            'copy' => $mcp_name,
+        ],
+        [
+            'title' => __('Enter the server URL', domain: 'novamira'),
+            'body' => __(
+                'Paste the URL below, set Authentication to OAuth, and create. Then sign in when the browser opens.',
+                domain: 'novamira',
+            ),
+            'copy' => $mcp_url,
+        ],
+    ];
+}
+
+/**
+ * A message-only client entry: no config, just an explanation. Used for a cloud client on a local
+ * site, where the client's servers cannot reach the site so no working config exists.
+ *
+ * @return array<string, string>
+ */
+function novamira_oauth_cloud_only_notice(string $client_label): array
+{
+    return [
+        'kind' => 'notice',
+        'message' => sprintf(
+            /* translators: %s: the AI client name, e.g. ChatGPT */
+            __(
+                '%s connects to your site from its own servers, so it can only reach a site that is available over the public internet, not one that runs only on your local machine.',
+                domain: 'novamira',
+            ),
+            $client_label,
+        ),
+    ];
+}
+
+/**
  * OAuth per-client connection configs, mirroring the app-password client list.
  *
  * On a publicly reachable site each client gets its native remote-MCP form (a URL the client
@@ -220,6 +278,9 @@ function novamira_oauth_bridge_claude_code(string $mcp_name, string $mcp_url, ar
  * is not verified, which fall back to the mcp-remote stdio bridge. On a local site every client
  * uses the bridge (which also carries the self-signed TLS bypass), and the browser-only
  * Claude.ai target is omitted because a local URL is unreachable for it.
+ *
+ * ChatGPT is cloud-only like Claude.ai but always kept in the list: publicly it gets the
+ * developer-mode connector steps, locally a notice explaining it needs a public site.
  *
  * @return array<string, array<string, mixed>>
  */
@@ -229,9 +290,24 @@ function novamira_build_oauth_configs(string $mcp_url, string $mcp_name): array
     // condition the app-password flow uses; a plain-HTTP local site or a trusted cert needs no flag.
     $env = novamira_likely_self_signed_https() ? ['NODE_TLS_REJECT_UNAUTHORIZED' => '0'] : [];
     if (novamira_host_unreachable_from_cloud()) {
-        return novamira_build_oauth_bridge_configs($mcp_url, $mcp_name, $env);
+        return (
+            novamira_build_oauth_bridge_configs($mcp_url, $mcp_name, $env)
+            + ['chatgpt' => novamira_oauth_cloud_only_notice('ChatGPT')]
+        );
     }
-    return novamira_build_oauth_public_configs($mcp_url, $mcp_name);
+    return (
+        novamira_build_oauth_public_configs($mcp_url, $mcp_name)
+        + [
+            'chatgpt' => [
+                'kind' => 'code',
+                'code' => '',
+                'hint' => '',
+                'paths' => [],
+                'isShell' => false,
+                'steps' => novamira_oauth_chatgpt_steps($mcp_name, $mcp_url),
+            ],
+        ]
+    );
 }
 
 /**
@@ -284,6 +360,41 @@ function novamira_oauth_connector_steps(string $app_label, string $mcp_name, str
             'copy' => $mcp_url,
         ],
     ];
+}
+
+/**
+ * CLI alternative shown under the Codex config.toml snippet, for users who prefer the terminal to
+ * editing the file. The server name is the placeholder swapped in client-side; both it and the URL
+ * are HTML-escaped here because the note is rendered as raw markup, not through the escaping step
+ * the config snippets pass through.
+ */
+function novamira_oauth_codex_cli_note(string $mcp_name, string $mcp_url): string
+{
+    return sprintf(
+        /* translators: 1: codex mcp add command, 2: codex mcp login command, both in <code> tags */
+        __('Prefer the terminal? Run %1$s, then %2$s.', domain: 'novamira'),
+        '<code>codex mcp add ' . esc_html($mcp_name) . ' --url ' . esc_html($mcp_url) . '</code>',
+        '<code>codex mcp login ' . esc_html($mcp_name) . '</code>',
+    );
+}
+
+/**
+ * CLI alternative shown under the local (bridge) Codex config.toml snippet. Unlike the public form,
+ * this adds the stdio bridge command (npx mcp-remote), carrying the same TLS-bypass env the snippet
+ * above uses, and needs no separate login step because the bridge runs the OAuth flow itself.
+ *
+ * @param array<string, string> $env
+ */
+function novamira_oauth_codex_bridge_cli_note(string $mcp_name, string $mcp_url, array $env): string
+{
+    $cmd = 'codex mcp add ' . esc_html($mcp_name);
+    foreach ($env as $key => $value) {
+        $cmd .= ' --env ' . esc_html($key) . '=' . esc_html($value);
+    }
+    $cmd .= ' -- npx -y mcp-remote ' . esc_html($mcp_url);
+
+    /* translators: %s: codex mcp add command in <code> tags */
+    return sprintf(__('Prefer the terminal? Run %s.', domain: 'novamira'), '<code>' . $cmd . '</code>');
 }
 
 /**
@@ -350,6 +461,7 @@ function novamira_build_oauth_native_configs(string $mcp_url, string $mcp_name):
                 '<code>codex mcp login</code>',
             ),
             ['macOS / Linux' => '~/.codex/config.toml', 'Windows' => '%USERPROFILE%\\.codex\\config.toml'],
+            novamira_oauth_codex_cli_note($mcp_name, $mcp_url),
         ),
         'cursor' => array_merge(
             novamira_oauth_code_entry(
@@ -453,6 +565,7 @@ function novamira_build_oauth_bridge_special(string $mcp_url, string $mcp_name, 
             novamira_oauth_bridge_codex($mcp_name, $mcp_url, $env),
             novamira_oauth_add_to('config.toml'),
             ['macOS / Linux' => '~/.codex/config.toml', 'Windows' => '%USERPROFILE%\\.codex\\config.toml'],
+            novamira_oauth_codex_bridge_cli_note($mcp_name, $mcp_url, $env),
         ),
         'zed' => novamira_oauth_code_entry($zed_json, novamira_oauth_add_to('settings.json'), [
             'macOS / Linux' => '~/.config/zed/settings.json',

@@ -591,6 +591,7 @@ function novamira_render_oauth_config_section(string $rest_url): void
         'claude-code' => 'Claude Code',
         'claude-desktop' => 'Claude Desktop',
         'claude-ai' => 'Claude.ai',
+        'chatgpt' => 'ChatGPT',
         'codex' => 'Codex',
         'antigravity' => 'Antigravity',
         'cursor' => 'Cursor',
@@ -646,6 +647,12 @@ function novamira_render_oauth_config_section(string $rest_url): void
             ><?php esc_html_e('One-click install', domain: 'novamira'); ?></a>
         </div>
 
+        <div
+            id="novamira-oauth-notice"
+            style="display:none; margin:4px 0 0; padding:12px 14px; background:#f0f6fc; border:1px solid #c3d9ed; border-radius:6px; font-size:14px;"
+        ></div>
+
+        <div id="novamira-oauth-name-wrap">
         <p style="margin:8px 0 4px;">
             <button
                 type="button"
@@ -692,6 +699,7 @@ function novamira_render_oauth_config_section(string $rest_url): void
                     ); ?>
                 </p>
             </div>
+        </div>
         </div>
 
         <div id="novamira-oauth-hint" style="font-size:13px; color:#666; padding:6px 0 0;"></div>
@@ -799,7 +807,9 @@ function novamira_render_oauth_config_section(string $rest_url): void
                 }
                 steps.push({ title: stepOpenLabel, bodyHtml: bodyHtml });
             }
-            steps.push({ title: stepAddLabel, body: stepAddNote, code: cfg.code });
+            var addStep = { title: stepAddLabel, body: stepAddNote, code: cfg.code };
+            if (cfg.note) { addStep.noteHtml = cfg.note; }
+            steps.push(addStep);
             steps.push(signInStep(true));
             return steps;
         }
@@ -833,6 +843,12 @@ function novamira_render_oauth_config_section(string $rest_url): void
                         esc(copyLabel) +
                         '</button></div>';
                 }
+                if (s.noteHtml) {
+                    html +=
+                        '<div style="margin-top:6px; color:#646970; font-size:13px;">' +
+                        s.noteHtml.split(namePlaceholder).join(esc(mcpName)) +
+                        '</div>';
+                }
                 html += '</li>';
             });
             document.getElementById('novamira-oauth-steps').innerHTML = html;
@@ -842,6 +858,22 @@ function novamira_render_oauth_config_section(string $rest_url): void
             if (!client) { return; }
             var cfg = configs[client];
             if (!cfg) { return; }
+
+            // A message-only client (e.g. a cloud client on a local site): show the explanation and
+            // hide every interactive part, including the server-name field.
+            var isNotice = cfg.kind === 'notice';
+            setDisplay('novamira-oauth-notice', isNotice);
+            setDisplay('novamira-oauth-name-wrap', !isNotice);
+            if (isNotice) {
+                document.getElementById('novamira-oauth-notice').textContent = cfg.message || '';
+                setDisplay('novamira-oauth-connector-wrap', false);
+                setDisplay('novamira-oauth-deeplink-wrap', false);
+                setDisplay('novamira-oauth-hint', false);
+                setDisplay('novamira-oauth-steps', false);
+                setDisplay('novamira-oauth-manual-btn-wrap', false);
+                setDisplay('novamira-oauth-manual', false);
+                return;
+            }
 
             var isConnector = cfg.kind === 'connector';
             var hasDeeplink = !!cfg.deeplink;
