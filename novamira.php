@@ -939,6 +939,12 @@ if ($is_enabled) {
 }
 
 add_action('wp_abilities_api_init', callback: 'novamira_apply_ability_policy', priority: PHP_INT_MAX);
+add_filter(
+    'mcp_adapter_tool_call_result',
+    callback: 'novamira_enrich_disabled_ability_error',
+    priority: 10,
+    accepted_args: 2,
+);
 
 // Ensure sandbox directory exists.
 wp_mkdir_p(NOVAMIRA_SANDBOX_DIR);

@@ -729,9 +729,25 @@ function novamira_sanitize_requested_ability_name(string $ability_name): string
     return sanitize_text_field(rawurldecode(wp_unslash($ability_name)));
 }
 
+/**
+ * Ability names kept always-on and out of the abilities screen, alongside the mcp-adapter meta-tools:
+ * the skills loader the discovery flow points agents to. Filterable so other infrastructure abilities
+ * can opt in.
+ *
+ * @return list<string>
+ */
+function novamira_always_on_ability_names(): array
+{
+    /** @var list<string> */
+    return apply_filters('novamira_always_on_ability_names', ['novamira/skill-get']);
+}
+
 function novamira_ability_is_hub_protected(string $ability_name): bool
 {
-    return str_starts_with($ability_name, 'mcp-adapter/');
+    return (
+        str_starts_with($ability_name, 'mcp-adapter/')
+        || in_array($ability_name, novamira_always_on_ability_names(), strict: true)
+    );
 }
 
 /**
@@ -791,6 +807,46 @@ function novamira_apply_ability_policy_rule(WP_Ability $ability, array $rules): 
     if ($rule['disabled'] && !novamira_ability_is_hub_protected($ability_name)) {
         wp_unregister_ability($ability_name);
     }
+}
+
+/**
+ * Turn the MCP adapter's generic "ability not found" result into a clear "switched off" message
+ * when the requested ability is one an admin disabled in the Abilities screen. A disabled ability is
+ * unregistered, so the adapter cannot otherwise tell it apart from one that was never installed —
+ * which leaves an agent following a skill that calls it with a misleading "not found".
+ *
+ * Filters mcp_adapter_tool_call_result (the execute-ability / get-ability-info result).
+ *
+ * @param mixed $result The raw tool result.
+ * @param mixed $args   The tool arguments; carries ability_name for the ability meta-tools.
+ * @return mixed
+ */
+function novamira_enrich_disabled_ability_error(mixed $result, mixed $args): mixed
+{
+    if (!is_array($result) || ($result['success'] ?? null) !== false) {
+        return $result;
+    }
+
+    $name = is_array($args) && is_string($args['ability_name'] ?? null) ? $args['ability_name'] : '';
+    if ($name === '' || ($result['error'] ?? null) !== "Ability '{$name}' not found") {
+        return $result;
+    }
+
+    $rules = novamira_get_ability_rules();
+    if (($rules[$name]['disabled'] ?? false) !== true) {
+        return $result;
+    }
+
+    $result['error'] = sprintf(
+        /* translators: %s: the ability name, e.g. novamira/execute-php */
+        __(
+            "Ability '%s' exists but is switched off in Novamira's AI Abilities settings. Ask the site admin to re-enable it there, then retry.",
+            domain: 'novamira',
+        ),
+        $name,
+    );
+
+    return $result;
 }
 
 /**
