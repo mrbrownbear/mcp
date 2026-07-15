@@ -214,9 +214,9 @@ function novamira_oauth_bridge_claude_code(string $mcp_name, string $mcp_url, ar
 }
 
 /**
- * Steps for ChatGPT's developer-mode custom connector: turn on developer mode, create a connector,
- * paste the OAuth server URL. ChatGPT reaches the server from OpenAI's cloud, so this is only
- * offered on a publicly reachable site (see novamira_build_oauth_configs()).
+ * Steps for ChatGPT's developer-mode plugin: turn on developer mode, create a plugin, paste the
+ * OAuth server URL. ChatGPT reaches the server from OpenAI's cloud, so this is only offered on a
+ * publicly reachable site (see novamira_build_oauth_configs()).
  *
  * @return list<array<string, string>>
  */
@@ -226,14 +226,14 @@ function novamira_oauth_chatgpt_steps(string $mcp_name, string $mcp_url): array
         [
             'title' => __('Enable developer mode', domain: 'novamira'),
             'body' => __(
-                'In ChatGPT, open Settings, go to Apps & Connectors, and turn on Developer mode under Advanced settings.',
+                'In ChatGPT, open Settings, go to Security and login, and turn on Developer mode. This is the only way to add plugins that OpenAI has not reviewed, and yours will always be one of those: it connects directly to your own site, so it can never be published as a reviewed plugin. The warning ChatGPT shows is expected.',
                 domain: 'novamira',
             ),
         ],
         [
-            'title' => __('Create a connector', domain: 'novamira'),
+            'title' => __('Create a plugin', domain: 'novamira'),
             'body' => __(
-                'Under Apps & Connectors, create a new connector and give it this name, or one you’ll recognize with "Novamira" in it:',
+                'In Settings, open Plugins and press the button in the top right to create a new plugin. Give it this name, or one you’ll recognize with "Novamira" in it:',
                 domain: 'novamira',
             ),
             'copy' => $mcp_name,
@@ -241,7 +241,7 @@ function novamira_oauth_chatgpt_steps(string $mcp_name, string $mcp_url): array
         [
             'title' => __('Enter the server URL', domain: 'novamira'),
             'body' => __(
-                'Paste the URL below, set Authentication to OAuth, and create. Then sign in when the browser opens.',
+                'Paste the URL below as the Server URL, keep Authentication set to OAuth, tick "I understand and want to continue", and press Create. Then sign in when the browser opens.',
                 domain: 'novamira',
             ),
             'copy' => $mcp_url,
@@ -280,7 +280,7 @@ function novamira_oauth_cloud_only_notice(string $client_label): array
  * Claude.ai target is omitted because a local URL is unreachable for it.
  *
  * ChatGPT is cloud-only like Claude.ai but always kept in the list: publicly it gets the
- * developer-mode connector steps, locally a notice explaining it needs a public site.
+ * developer-mode plugin steps, locally a notice explaining it needs a public site.
  *
  * @return array<string, array<string, mixed>>
  */
