@@ -92,7 +92,7 @@ wp_register_ability('novamira/gutenberg-add-pending-change', [
         'annotations' => [
             'instructions' => 'Use this for native/static Gutenberg content. Compose with registered blocks (core or third-party) passed as {name, attributes, innerBlocks}, not raw HTML; the queue serializes each block with its own editor JavaScript. If every top-level block is raw HTML (core/html or classic) the ability refuses the write so you recompose with real blocks; only resend with allow_raw_html=true when the raw HTML is genuinely intentional. If no batch_id is supplied, this ability creates a draft batch and adds the first item. Check finalizer_runtime in the response: if online is false, ask the user to open dashboard_url and keep the Block Editor Queue page open while you finish queueing. You may stream finalizer_runtime.sse_url with curl -N or poll finalizer_runtime.poll_url with curl to check whether the page is still open. Continue adding items to the same batch_id, then call gutenberg-enable-batch-finalization. If a Block Editor Queue page is online, enabling the batch should let that page process it automatically. Do not tell the user the changes are live until finalization completes.',
             'readonly' => false,
-            'destructive' => false,
+            'destructive' => true,
             'idempotent' => false,
         ],
     ],

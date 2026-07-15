@@ -48,7 +48,7 @@ wp_register_ability('novamira/gutenberg-enable-batch-finalization', [
         'annotations' => [
             'instructions' => 'Call this only after every target change has been added to the batch. Check finalizer_runtime: if online and can_finalize_batch are true, the open Block Editor Queue page should process the batch automatically, so stream finalizer_runtime.sse_url with curl -N or poll finalizer_runtime.poll_url with curl instead of repeatedly calling MCP abilities or asking the user to do anything. If the runtime is offline or becomes offline while watching, point the user to finalizer_runtime.dashboard_url or finalization_url; both are the generic Block Editor Queue page. Items may be staged as prepared while the browser works; do not treat queued Gutenberg changes as live until the batch reports finalized.',
             'readonly' => false,
-            'destructive' => false,
+            'destructive' => true,
             'idempotent' => true,
         ],
     ],
