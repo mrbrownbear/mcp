@@ -963,7 +963,7 @@ function novamira_render_oauth_config_section(string $rest_url): void
         window.novamiraOauthCopyStep = function (btn) {
             var pre = btn.previousElementSibling;
             if (!pre) { return; }
-            navigator.clipboard.writeText(pre.textContent).then(function () {
+            window.novamiraClipboardCopy(pre.textContent).then(function () {
                 var orig = btn.textContent;
                 btn.textContent = copiedLabel;
                 setTimeout(function () { btn.textContent = orig; }, 1500);
@@ -973,7 +973,7 @@ function novamira_render_oauth_config_section(string $rest_url): void
         window.novamiraOauthCopyChip = function (btn) {
             var value = btn.previousElementSibling;
             if (!value) { return; }
-            navigator.clipboard.writeText(value.textContent).then(function () {
+            window.novamiraClipboardCopy(value.textContent).then(function () {
                 var orig = btn.textContent;
                 btn.textContent = copiedLabel;
                 setTimeout(function () { btn.textContent = orig; }, 1500);
@@ -2190,7 +2190,7 @@ function novamira_render_config_section(string $rest_url, string $username, stri
         };
 
         window.novamiraCopyPaste = function (btn) {
-            navigator.clipboard.writeText(document.getElementById('novamira-paste-text').textContent).then(function () {
+            window.novamiraClipboardCopy(document.getElementById('novamira-paste-text').textContent).then(function () {
                 var orig = btn.textContent;
                 btn.textContent = '<?php echo $copied_label; ?>';
                 var warning = document.getElementById('novamira-paste-copied-warning');
@@ -2203,7 +2203,7 @@ function novamira_render_config_section(string $rest_url, string $username, stri
         };
 
         window.novamiraCopyConfig = function (btn) {
-            navigator.clipboard.writeText(document.getElementById('novamira-config-code').textContent).then(function () {
+            window.novamiraClipboardCopy(document.getElementById('novamira-config-code').textContent).then(function () {
                 var orig = btn.textContent;
                 btn.textContent = '<?php echo $copied_label; ?>';
                 setTimeout(function () { btn.textContent = orig; }, 1500);
@@ -2225,7 +2225,7 @@ function novamira_render_config_section(string $rest_url, string $username, stri
         };
 
         window.novamiraCopyNpxlessConfig = function (btn) {
-            navigator.clipboard.writeText(document.getElementById('novamira-npxless-code').textContent).then(function () {
+            window.novamiraClipboardCopy(document.getElementById('novamira-npxless-code').textContent).then(function () {
                 var orig = btn.textContent;
                 btn.textContent = '<?php echo $copied_label; ?>';
                 setTimeout(function () { btn.textContent = orig; }, 1500);
@@ -2648,9 +2648,34 @@ function novamira_render_connect_page(): void
     </div>
 
     <script>
+    // navigator.clipboard exists only in a secure context (HTTPS, or http://localhost). On a local
+    // site served over plain HTTP on a non-localhost host it is undefined, so fall back to a hidden
+    // textarea + execCommand('copy'), which needs no secure context.
+    window.novamiraClipboardCopy = function (text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.top = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            var ok = false;
+            try {
+                ok = document.execCommand('copy');
+            } catch (e) {
+                ok = false;
+            }
+            document.body.removeChild(ta);
+            ok ? resolve() : reject(new Error('copy command was rejected'));
+        });
+    };
     function novamiraCopy(id, btn) {
         var text = document.getElementById(id).textContent;
-        navigator.clipboard.writeText(text).then(function() {
+        window.novamiraClipboardCopy(text).then(function() {
             var orig = btn.textContent;
             btn.textContent = '<?php echo $copied_label; ?>';
             setTimeout(function() { btn.textContent = orig; }, 1500);
