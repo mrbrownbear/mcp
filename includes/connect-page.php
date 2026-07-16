@@ -2327,6 +2327,64 @@ function novamira_render_mcp_dependency_inline_notice(?WP_Error $dependency_erro
     <?php
 }
 
+/**
+ * Warn when the web server does not forward HTTP Authorization headers to PHP.
+ */
+function novamira_render_authorization_header_warning(): void
+{
+    if (wp_is_site_protected_by_basic_auth()) {
+        return;
+    }
+
+    $test_url = rest_url('wp-site-health/v1/tests/authorization-header');
+    $rest_nonce = (string) wp_create_nonce('wp_rest');
+    ?>
+    <div id="novamira-authorization-header-warning" class="notice notice-warning novamira-keep" role="alert" hidden>
+        <p>
+            <strong><?php esc_html_e(
+                'The HTTP Authorization header is not reaching PHP.',
+                domain: 'novamira',
+            ); ?></strong>
+            <?php esc_html_e(
+                'Application Password authentication may fail with unexpected 401 responses even when the credentials are correct.',
+                domain: 'novamira',
+            ); ?>
+        </p>
+        <p>
+            <?php esc_html_e(
+                'For Apache, add this directive to the applicable virtual host or .htaccess configuration, then reload the server:',
+                domain: 'novamira',
+            ); ?>
+            <code>SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1</code>
+            <?php esc_html_e(
+                'If you cannot change the server configuration, contact your hosting provider.',
+                domain: 'novamira',
+            ); ?>
+        </p>
+    </div>
+    <script>
+    window.fetch(<?php echo wp_json_encode($test_url); ?>, {
+        credentials: 'same-origin',
+        headers: {
+            'Authorization': 'Basic dXNlcjpwd2Q=',
+            'X-WP-Nonce': <?php echo wp_json_encode($rest_nonce); ?>
+        }
+    }).then(function (response) {
+        if (!response.ok) {
+            throw new Error('Authorization header test unavailable');
+        }
+        return response.json();
+    }).then(function (result) {
+        if (result && result.status !== 'good') {
+            document.getElementById('novamira-authorization-header-warning').hidden = false;
+        }
+    }).catch(function () {
+        // A REST or network failure does not prove that Authorization forwarding is broken.
+    });
+    </script>
+    <?php
+}
+
 function novamira_render_enable_prompt(?WP_Error $dependency_error): void
 {
     if (novamira_is_enabled() || $dependency_error !== null) {
@@ -2601,6 +2659,8 @@ function novamira_render_connect_page(): void
         <h1><?php esc_html_e('Configuration', domain: 'novamira'); ?></h1>
 
         <?php novamira_render_mcp_dependency_inline_notice($mcp_dependency_error); ?>
+
+        <?php novamira_render_authorization_header_warning(); ?>
 
         <?php if ($toggle_saved === true): ?>
             <div class="notice notice-success is-dismissible"><p><?php
