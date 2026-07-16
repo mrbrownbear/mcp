@@ -887,55 +887,64 @@ if ($is_enabled) {
     }
 
     // Register ability categories.
-    add_action('wp_abilities_api_categories_init', static function () {
-        wp_register_ability_category('code-execution', [
-            'label' => __('Code Execution', domain: 'novamira'),
-            'description' => __('Abilities that execute code on the WordPress server.', domain: 'novamira'),
-        ]);
-
-        wp_register_ability_category('filesystem', [
-            'label' => __('Filesystem', domain: 'novamira'),
-            'description' => __('Server filesystem operations.', domain: 'novamira'),
-        ]);
-
-        wp_register_ability_category('admin-access', [
-            'label' => __('Admin Access', domain: 'novamira'),
-            'description' => __('Temporary browser access to WordPress admin.', domain: 'novamira'),
-        ]);
-
-        if (!wp_has_ability_category('mcp-adapter')) {
-            wp_register_ability_category('mcp-adapter', [
-                'label' => __('MCP Adapter', domain: 'novamira'),
-                'description' => __('Meta-abilities for MCP protocol bridging.', domain: 'novamira'),
+    add_action(
+        'wp_abilities_api_categories_init',
+        static function () {
+            wp_register_ability_category('code-execution', [
+                'label' => __('Code Execution', domain: 'novamira'),
+                'description' => __('Abilities that execute code on the WordPress server.', domain: 'novamira'),
             ]);
-        }
 
-        wp_register_ability_category('gutenberg', [
-            'label' => __('Gutenberg', domain: 'novamira'),
-            'description' => __(
-                'Gutenberg content abilities, including the Block Editor Queue for native/static blocks that need browser JS finalization. At the start of Gutenberg work, check the queue runtime and ask the user to keep the Block Editor Queue page open when static/native blocks may be queued.',
-                domain: 'novamira',
-            ),
-        ]);
-    });
+            wp_register_ability_category('filesystem', [
+                'label' => __('Filesystem', domain: 'novamira'),
+                'description' => __('Server filesystem operations.', domain: 'novamira'),
+            ]);
 
-    // Register abilities.
-    add_action('wp_abilities_api_init', static function () {
-        $dir = __DIR__ . '/includes/abilities/';
-        require_once $dir . 'execute-php.php';
-        require_once $dir . 'read-file.php';
-        require_once $dir . 'write-file.php';
-        require_once $dir . 'edit-file.php';
-        require_once $dir . 'delete-file.php';
-        require_once $dir . 'create-upload-link.php';
-        require_once $dir . 'create-admin-access-link.php';
-        require_once $dir . 'disable-file.php';
-        require_once $dir . 'enable-file.php';
-        require_once $dir . 'list-directory.php';
-        require_once $dir . 'discover-abilities.php';
-        require_once $dir . 'run-wp-cli.php';
-        novamira_load_gutenberg_abilities();
-    });
+            wp_register_ability_category('admin-access', [
+                'label' => __('Admin Access', domain: 'novamira'),
+                'description' => __('Temporary browser access to WordPress admin.', domain: 'novamira'),
+            ]);
+
+            if (!wp_has_ability_category('mcp-adapter')) {
+                wp_register_ability_category('mcp-adapter', [
+                    'label' => __('MCP Adapter', domain: 'novamira'),
+                    'description' => __('Meta-abilities for MCP protocol bridging.', domain: 'novamira'),
+                ]);
+            }
+
+            wp_register_ability_category('gutenberg', [
+                'label' => __('Gutenberg', domain: 'novamira'),
+                'description' => __(
+                    'Gutenberg content abilities, including the Block Editor Queue for native/static blocks that need browser JS finalization. At the start of Gutenberg work, check the queue runtime and ask the user to keep the Block Editor Queue page open when static/native blocks may be queued.',
+                    domain: 'novamira',
+                ),
+            ]);
+        },
+        priority: 20,
+    );
+
+    // Run after the bundled adapter so our discovery ability can replace its default
+    // without causing the adapter to attempt a duplicate registration afterward.
+    add_action(
+        'wp_abilities_api_init',
+        static function () {
+            $dir = __DIR__ . '/includes/abilities/';
+            require_once $dir . 'execute-php.php';
+            require_once $dir . 'read-file.php';
+            require_once $dir . 'write-file.php';
+            require_once $dir . 'edit-file.php';
+            require_once $dir . 'delete-file.php';
+            require_once $dir . 'create-upload-link.php';
+            require_once $dir . 'create-admin-access-link.php';
+            require_once $dir . 'disable-file.php';
+            require_once $dir . 'enable-file.php';
+            require_once $dir . 'list-directory.php';
+            require_once $dir . 'discover-abilities.php';
+            require_once $dir . 'run-wp-cli.php';
+            novamira_load_gutenberg_abilities();
+        },
+        priority: 20,
+    );
 }
 
 add_action('wp_abilities_api_init', callback: 'novamira_apply_ability_policy', priority: PHP_INT_MAX);
