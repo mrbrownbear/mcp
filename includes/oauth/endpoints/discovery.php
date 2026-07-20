@@ -179,6 +179,7 @@ function protected_resource_document(): array
         'authorization_servers' => [home_url()],
         'bearer_methods_supported' => ['header'],
         'scopes_supported' => ['mcp'],
+        'novamira' => \novamira_server_compatibility(),
     ];
 }
 

@@ -8,8 +8,13 @@ if (!defined('ABSPATH')) {
     define('ABSPATH', '/');
 }
 if (!function_exists('add_action')) {
-    function add_action(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): bool
-    {
+    function add_action(
+        string $hook_name,
+        callable|string $callback,
+        int $priority = 10,
+        int $accepted_args = 1,
+    ): bool {
+        $GLOBALS['novamira_test_actions'][] = [$hook_name, $callback, $priority, $accepted_args];
         return true;
     }
 }

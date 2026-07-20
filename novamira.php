@@ -37,7 +37,8 @@ if (!defined('ABSPATH')) {
     exit();
 }
 
-define(constant_name: 'NOVAMIRA_VERSION', value: '1.10.1');
+require_once __DIR__ . '/includes/compatibility.php';
+
 define(constant_name: 'NOVAMIRA_MAX_EXECUTION_TIME', value: 30);
 define('NOVAMIRA_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('NOVAMIRA_SANDBOX_DIR', WP_CONTENT_DIR . '/novamira-sandbox/');
@@ -123,27 +124,6 @@ function novamira_mcp_dependency_error(?WP_Error $error = null)
 function novamira_is_mcp_adapter_available(): bool
 {
     return novamira_get_mcp_dependency_error() === null && class_exists(NOVAMIRA_MCP_ADAPTER_CLASS);
-}
-
-/**
- * Block activation when the distributable dependencies are missing.
- */
-function novamira_activation_check(): void
-{
-    $error = novamira_get_mcp_dependency_error();
-    if ($error === null) {
-        return;
-    }
-
-    if (function_exists('deactivate_plugins')) {
-        deactivate_plugins(plugin_basename(__FILE__));
-    }
-
-    wp_die(
-        '<p>' . esc_html($error->get_error_message()) . '</p>',
-        esc_html__('Novamira installation is incomplete', domain: 'novamira'),
-        ['back_link' => true],
-    );
 }
 
 /**
@@ -238,7 +218,6 @@ if ($novamira_dependency_error !== null) {
 
 require_once __DIR__ . '/includes/chat-schema.php';
 
-register_activation_hook(__FILE__, callback: 'novamira_activation_check');
 register_activation_hook(__FILE__, callback: 'novamira_chat_schema_install');
 register_deactivation_hook(__FILE__, callback: 'novamira_unschedule_gutenberg_cron');
 add_action('admin_notices', callback: 'novamira_render_mcp_dependency_notice');
@@ -247,6 +226,7 @@ add_action('plugins_loaded', callback: 'novamira_chat_schema_maybe_install');
 add_action('rest_api_init', callback: 'novamira_register_missing_mcp_endpoint', priority: 999);
 
 require_once __DIR__ . '/includes/helpers.php';
+require_once __DIR__ . '/includes/abilities/bootstrap.php';
 require_once __DIR__ . '/includes/updater.php';
 require_once __DIR__ . '/includes/admin-page.php';
 require_once __DIR__ . '/includes/connect-page.php';
@@ -260,7 +240,9 @@ require_once __DIR__ . '/includes/troubleshoot/bootstrap.php';
 require_once __DIR__ . '/includes/instructions-admin.php';
 
 \Novamira\Context\boot_context_admin();
-require_once __DIR__ . '/includes/rest-shim.php';
+novamira_register_wordpress_compatibility_notice();
+novamira_boot_ability_rest_surface();
+novamira_register_ability_policy_hook();
 require_once __DIR__ . '/novamira-visual/bootstrap.php';
 require_once __DIR__ . '/includes/chat.php';
 
@@ -642,8 +624,12 @@ if (!$is_enabled && novamira_is_domain_mismatch()) {
     });
 }
 
-if ($is_enabled) {
+$novamira_abilities_supported = novamira_wordpress_abilities_supported();
+$novamira_adapter_initialized = false;
+
+if ($is_enabled && $novamira_abilities_supported) {
     novamira_load_gutenberg_runtime();
+    novamira_register_ability_hooks();
 
     // Brand the default MCP server. Usage instructions are returned from the
     // discover-abilities tool instead of the initialize handshake.
@@ -667,10 +653,9 @@ if ($is_enabled) {
     // check as the OAuth bootstrap so the endpoint never exists without its token/authorize peers.
     add_action('mcp_adapter_init', callback: 'novamira_register_oauth_mcp_server', priority: 20);
 
-    // Initialize bundled MCP Adapter — its default server exposes our abilities automatically.
-    if (!novamira_initialize_mcp_adapter()) {
-        $is_enabled = false;
-    }
+    // Initialize the optional bundled adapter after the transport-neutral Ability and REST hooks.
+    // An adapter failure must not remove those hooks or make the REST Ability surface disappear.
+    $novamira_adapter_initialized = novamira_initialize_mcp_adapter();
 }
 
 /**
@@ -791,7 +776,7 @@ function novamira_discover_public_abilities(string $type): array
     return $filtered;
 }
 
-if ($is_enabled) {
+if ($novamira_adapter_initialized) {
     // The `mcp-adapter/execute-ability` dispatcher wraps every ability return in
     // `{ success: true, data: <inner> }`. When the inner value is itself
     // `{ success: false, error: "..." }` the outer `success: true` masks a real
@@ -895,69 +880,7 @@ if ($is_enabled) {
             );
         });
     }
-
-    // Register ability categories.
-    add_action(
-        'wp_abilities_api_categories_init',
-        static function () {
-            wp_register_ability_category('code-execution', [
-                'label' => __('Code Execution', domain: 'novamira'),
-                'description' => __('Abilities that execute code on the WordPress server.', domain: 'novamira'),
-            ]);
-
-            wp_register_ability_category('filesystem', [
-                'label' => __('Filesystem', domain: 'novamira'),
-                'description' => __('Server filesystem operations.', domain: 'novamira'),
-            ]);
-
-            wp_register_ability_category('admin-access', [
-                'label' => __('Admin Access', domain: 'novamira'),
-                'description' => __('Temporary browser access to WordPress admin.', domain: 'novamira'),
-            ]);
-
-            if (!wp_has_ability_category('mcp-adapter')) {
-                wp_register_ability_category('mcp-adapter', [
-                    'label' => __('MCP Adapter', domain: 'novamira'),
-                    'description' => __('Meta-abilities for MCP protocol bridging.', domain: 'novamira'),
-                ]);
-            }
-
-            wp_register_ability_category('gutenberg', [
-                'label' => __('Gutenberg', domain: 'novamira'),
-                'description' => __(
-                    'Gutenberg content abilities, including the Block Editor Queue for native/static blocks that need browser JS finalization. At the start of Gutenberg work, check the queue runtime and ask the user to keep the Block Editor Queue page open when static/native blocks may be queued.',
-                    domain: 'novamira',
-                ),
-            ]);
-        },
-        priority: 20,
-    );
-
-    // Run after the bundled adapter so our discovery ability can replace its default
-    // without causing the adapter to attempt a duplicate registration afterward.
-    add_action(
-        'wp_abilities_api_init',
-        static function () {
-            $dir = __DIR__ . '/includes/abilities/';
-            require_once $dir . 'execute-php.php';
-            require_once $dir . 'read-file.php';
-            require_once $dir . 'write-file.php';
-            require_once $dir . 'edit-file.php';
-            require_once $dir . 'delete-file.php';
-            require_once $dir . 'create-upload-link.php';
-            require_once $dir . 'create-admin-access-link.php';
-            require_once $dir . 'disable-file.php';
-            require_once $dir . 'enable-file.php';
-            require_once $dir . 'list-directory.php';
-            require_once $dir . 'discover-abilities.php';
-            require_once $dir . 'run-wp-cli.php';
-            novamira_load_gutenberg_abilities();
-        },
-        priority: 20,
-    );
 }
-
-add_action('wp_abilities_api_init', callback: 'novamira_apply_ability_policy', priority: PHP_INT_MAX);
 add_filter(
     'mcp_adapter_tool_call_result',
     callback: 'novamira_enrich_disabled_ability_error',

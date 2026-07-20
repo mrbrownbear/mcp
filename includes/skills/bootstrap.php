@@ -49,12 +49,15 @@ add_filter('novamira_discover_abilities_instructions', __NAMESPACE__ . '\\Catalo
 // is only honored during wp_abilities_api_categories_init, so registering it on
 // wp_abilities_api_init (as before) was silently dropped and every ability below it —
 // declaring 'category' => 'skill' — was rejected. Match the base plugin and the design module.
-add_action('wp_abilities_api_categories_init', __NAMESPACE__ . '\\Abilities\\register_categories', priority: 5);
 // MCP prompt-mode skill abilities and the canonical skill-get must register
 // after any pre-existing owner so we can save a reference and delegate when
 // our lookup misses (priority 999). See abilities/skill-get.php for details.
-add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Prompts\\register_dynamic_abilities', priority: 500);
-add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\SkillGet\\register', priority: 999);
-add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\SkillWrite\\register', priority: 999);
-add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\SkillEdit\\register', priority: 999);
-add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\SkillDelete\\register', priority: 999);
+// WordPress older than 6.9 has no Abilities API and must receive no Ability hooks.
+if (\novamira_wordpress_abilities_supported()) {
+    add_action('wp_abilities_api_categories_init', __NAMESPACE__ . '\\Abilities\\register_categories', priority: 5);
+    add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Prompts\\register_dynamic_abilities', priority: 500);
+    add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\SkillGet\\register', priority: 999);
+    add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\SkillWrite\\register', priority: 999);
+    add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\SkillEdit\\register', priority: 999);
+    add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\SkillDelete\\register', priority: 999);
+}
