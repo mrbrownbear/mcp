@@ -33,7 +33,7 @@ define(constant_name: 'NOVAMIRA_MINIMUM_WORDPRESS_VERSION', value: '6.9');
 function novamira_rest_api_features(): array
 {
     return [
-        'abilities_bearer_auth' => false,
+        'abilities_bearer_auth' => true,
         'abilities_read_scope' => false,
         'agent_context' => false,
         'rest_skills' => false,

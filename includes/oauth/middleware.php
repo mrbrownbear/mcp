@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Novamira\OAuth\Middleware;
 
 use League\OAuth2\Server\Exception\OAuthServerException;
+use League\OAuth2\Server\ResourceServer;
 use Novamira\OAuth\Bridge;
 use Novamira\OAuth\ServerFactory;
 use WP_Error;
@@ -20,22 +21,179 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') {
 
 function register(): void
 {
-    add_filter('rest_authentication_errors', __NAMESPACE__ . '\\authenticate', priority: 20);
+    // WordPress cookie and Application Password authenticators run first. Novamira only establishes
+    // an identity when they did not, and does so before REST authentication/hardening callbacks.
+    add_filter('determine_current_user', __NAMESPACE__ . '\\resolve_bearer_identity', priority: 30);
+    add_filter('rest_authentication_errors', __NAMESPACE__ . '\\reject_invalid_bearer', priority: 5);
+
+    // This hook runs only after WP_REST_Server matches a registered route and before its permission
+    // callback. A separate legacy challenge remains pre-dispatch for missing MCP credentials.
+    add_filter(
+        'rest_request_before_callbacks',
+        __NAMESPACE__ . '\\authorize_routed_request',
+        priority: 5,
+        accepted_args: 3,
+    );
     add_filter('rest_pre_dispatch', __NAMESPACE__ . '\\challenge_unauthenticated', priority: 10, accepted_args: 3);
+}
+
+/**
+ * Establish a WordPress identity without making any route authorization decision.
+ *
+ * @param mixed $user Existing identity established by WordPress.
+ * @return mixed The existing identity, or the OAuth subject ID after successful validation.
+ */
+function resolve_bearer_identity(mixed $user): mixed
+{
+    $auth = get_authorization_header();
+
+    return resolve_bearer_identity_using(
+        $user,
+        $auth,
+        static fn(string $authorization): array => validate_bearer_credential($authorization),
+    );
+}
+
+/**
+ * Testable identity-resolution core. The production entry point always supplies the cryptographic
+ * League OAuth resource-server validator above; route or query values are deliberately unavailable.
+ *
+ * @param \Closure(string): array{user_id: int, scopes: list<string>} $validator
+ * @return mixed
+ */
+function resolve_bearer_identity_using(mixed $user, string $auth, \Closure $validator): mixed
+{
+    reset_request_context();
+
+    if (has_existing_identity($user)) {
+        return $user;
+    }
+    if (!has_bearer_scheme($auth)) {
+        return $user;
+    }
+    if (!has_bearer_authorization($auth)) {
+        record_authentication_error('Malformed OAuth Bearer credential.');
+        return $user;
+    }
+
+    try {
+        $identity = $validator(normalize_bearer_authorization($auth));
+        $user_id = $identity['user_id'];
+        if ($user_id <= 0) {
+            record_authentication_error('Invalid OAuth token subject.');
+            return $user;
+        }
+
+        wp_set_current_user($user_id);
+        record_oauth_identity($user_id, $identity['scopes']);
+
+        return $user_id;
+    } catch (OAuthServerException) {
+        record_authentication_error('Invalid, expired, or revoked OAuth access token.');
+        return $user;
+    } catch (\Throwable) {
+        record_authentication_error('OAuth authentication failed.', status: 500);
+        return $user;
+    }
+}
+
+/**
+ * Validate signature, validity window, revocation, audience, subject, and granted scopes.
+ *
+ * The optional server exists for focused tests; production always builds the server from Novamira's
+ * own key and access-token repository.
+ *
+ * @return array{user_id: int, scopes: list<string>}
+ * @throws OAuthServerException
+ */
+function validate_bearer_credential(string $auth, ?ResourceServer $server = null): array
+{
+    $server ??= ServerFactory\build_resource_server();
+    $validated = $server->validateAuthenticatedRequest(Bridge\psr7_from_globals()->withHeader(
+        'Authorization',
+        normalize_bearer_authorization($auth),
+    ));
+
+    // RFC 8707: a token minted for another resource must never establish a WordPress identity.
+    if ($validated->getAttribute('oauth_client_id') !== \Novamira\OAuth\resource_identifier()) {
+        throw OAuthServerException::accessDenied('Token audience does not match this resource.');
+    }
+
+    $user_id = (int) $validated->getAttribute('oauth_user_id');
+    if ($user_id <= 0) {
+        throw OAuthServerException::accessDenied('Invalid token subject.');
+    }
+
+    return [
+        'user_id' => $user_id,
+        'scopes' => normalize_scopes($validated->getAttribute('oauth_scopes')),
+    ];
+}
+
+/**
+ * Return a stored validation error before later REST hardening callbacks run.
+ */
+function reject_invalid_bearer(mixed $result): mixed
+{
+    $error = request_authentication_error();
+    if ($error === null) {
+        return $result;
+    }
+
+    // A different authenticator must not turn a presented invalid Bearer credential into success.
+    send_www_authenticate('invalid_token');
+    return $error;
+}
+
+/**
+ * Enforce OAuth's route boundary from the authoritative matched request route and method.
+ */
+function authorize_routed_request(mixed $result, mixed $handler, WP_REST_Request $request): mixed
+{
+    $route = $request->get_route();
+    $method = strtoupper($request->get_method());
+    $identity = request_oauth_identity();
+
+    if ($identity === null) {
+        return $result;
+    }
+
+    if (!oauth_identity_may_use_route($route, $method)) {
+        send_www_authenticate('insufficient_scope');
+        return new WP_Error(
+            'rest_oauth_route_forbidden',
+            'This OAuth credential is not accepted on the requested REST route.',
+            ['status' => 403],
+        );
+    }
+
+    // Keep legacy grants isolated to their existing protocol endpoint. S04 adds lifecycle support
+    // and readonly Ability resolution; this boundary already fails closed for unissued/unknown grants.
+    if (!scopes_authorize_routed_request($identity['scopes'], $route, $method)) {
+        send_www_authenticate('insufficient_scope');
+        return new WP_Error('rest_oauth_error', 'Token does not grant access to this REST route.', ['status' => 403]);
+    }
+
+    if (!current_user_can_access_mcp()) {
+        send_www_authenticate('insufficient_scope');
+        return new WP_Error('rest_oauth_error', 'User is no longer allowed to manage Novamira.', [
+            'status' => 403,
+        ]);
+    }
+
+    // Preserve an earlier pre-dispatch response only after proving that OAuth may be used here.
+    return $result;
 }
 
 function challenge_unauthenticated(mixed $result, mixed $server, WP_REST_Request $request): mixed
 {
-    if ($result !== null) {
+    if ($result !== null || !is_mcp_route($request->get_route())) {
         return $result;
     }
-    $route = $request->get_route();
-    if (!is_mcp_route($route)) {
+    if (has_bearer_scheme(get_authorization_header())) {
         return null;
     }
-    if (has_bearer_authorization(get_authorization_header())) {
-        return null;
-    }
+
     $response = new WP_REST_Response([
         'code' => 'rest_oauth_required',
         'message' => 'OAuth authentication required.',
@@ -45,9 +203,7 @@ function challenge_unauthenticated(mixed $result, mixed $server, WP_REST_Request
 }
 
 /**
- * RFC 6750 WWW-Authenticate challenge value. Always points clients at the protected-resource
- * metadata and declares the required scope; an $error (invalid_token / insufficient_scope) is
- * added when a presented token is rejected, so a client can tell "no token" from "bad token".
+ * RFC 6750 WWW-Authenticate challenge value.
  */
 function www_authenticate_header(?string $error = null): string
 {
@@ -58,10 +214,6 @@ function www_authenticate_header(?string $error = null): string
     return $value . ', scope="mcp"';
 }
 
-/**
- * Emit the WWW-Authenticate header for a rejected Bearer token. authenticate() runs on
- * rest_authentication_errors, before REST output, so the header still reaches the client.
- */
 function send_www_authenticate(string $error): void
 {
     if (!headers_sent()) {
@@ -69,69 +221,47 @@ function send_www_authenticate(string $error): void
     }
 }
 
-function authenticate(mixed $result): mixed
-{
-    if ($result !== null) {
-        return $result;
-    }
-
-    $auth = get_authorization_header();
-    if (!has_bearer_authorization($auth)) {
-        return null;
-    }
-    if (!request_targets_mcp_route()) {
-        return null;
-    }
-
-    try {
-        $server = ServerFactory\build_resource_server();
-        $validated = $server->validateAuthenticatedRequest(Bridge\psr7_from_globals()->withHeader(
-            'Authorization',
-            normalize_bearer_authorization($auth),
-        ));
-        // RFC 8707 / MCP: the token's audience (league exposes the aud claim as oauth_client_id)
-        // must name this resource, so a token issued for a different resource is not accepted here.
-        if ($validated->getAttribute('oauth_client_id') !== \Novamira\OAuth\resource_identifier()) {
-            send_www_authenticate('invalid_token');
-            return new WP_Error('rest_oauth_error', 'Token audience does not match this resource.', [
-                'status' => 401,
-            ]);
-        }
-        if (!has_mcp_scope($validated->getAttribute('oauth_scopes'))) {
-            send_www_authenticate('insufficient_scope');
-            return new WP_Error('rest_oauth_error', 'Token is missing the required mcp scope.', ['status' => 403]);
-        }
-        $user_id = (int) $validated->getAttribute('oauth_user_id');
-        if ($user_id <= 0) {
-            send_www_authenticate('invalid_token');
-            return new WP_Error('rest_oauth_error', 'Invalid token subject.', ['status' => 401]);
-        }
-        wp_set_current_user($user_id);
-        if (!current_user_can_access_mcp()) {
-            send_www_authenticate('insufficient_scope');
-            return new WP_Error('rest_oauth_error', 'User is no longer allowed to use Novamira MCP.', [
-                'status' => 403,
-            ]);
-        }
-        return true;
-    } catch (OAuthServerException $e) {
-        send_www_authenticate('invalid_token');
-        return new WP_Error('rest_oauth_error', $e->getMessage(), ['status' => $e->getHttpStatusCode()]);
-    } catch (\Throwable $e) {
-        return new WP_Error('rest_oauth_error', 'Authentication failed.', ['status' => 500]);
-    }
-}
-
 /**
- * The OAuth flow is scoped to its own MCP server at `/mcp/novamira-oauth` (registered in
- * novamira.php). The canonical `/mcp/novamira` — used by Application Password installs — is
- * deliberately excluded so the OAuth challenge never fires on it. Note `/mcp/novamira-oauth`
- * does not start with `/mcp/novamira/` (dash, not slash), so matching must be exact on the
- * `-oauth` slug, never a loose `/mcp/novamira` prefix.
+ * Existing OAuth protocol endpoint retained for backward compatibility.
  */
 function is_mcp_route(string $route): bool
 {
     return $route === '/mcp/novamira-oauth' || str_starts_with($route, '/mcp/novamira-oauth/');
+}
+
+/**
+ * Exact REST routes on which a Novamira-established identity may survive post-routing checks.
+ */
+function oauth_identity_may_use_route(string $route, string $method): bool
+{
+    $method = strtoupper($method);
+    if (is_mcp_route($route)) {
+        return true;
+    }
+    if ($route === '/wp-abilities/v1/abilities') {
+        return $method === 'GET' || $method === 'HEAD';
+    }
+    if ($method === 'GET' && preg_match('#^/wp-abilities/v1/abilities/[^/]+(?:/[^/]+)+$#', $route) === 1) {
+        return true;
+    }
+
+    return $method === 'POST' && preg_match('#^/novamira/v1/abilities/[^/]+(?:/[^/]+)+/run$#', $route) === 1;
+}
+
+/** @param list<string> $scopes */
+function scopes_authorize_routed_request(array $scopes, string $route, string $method): bool
+{
+    if (is_mcp_route($route)) {
+        return in_array('mcp', $scopes, strict: true);
+    }
+
+    // S04 resolves readonly execution before admitting abilities:read. Until then, the narrow grant
+    // may inspect list/item routes only; full Ability grants may use every structural route above.
+    if (in_array('abilities', $scopes, strict: true)) {
+        return true;
+    }
+
+    return in_array('abilities:read', $scopes, strict: true) && strtoupper($method) !== 'POST';
 }
 
 function get_authorization_header(): string
@@ -142,6 +272,11 @@ function get_authorization_header(): string
     }
 
     return trim($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+}
+
+function has_bearer_scheme(string $auth): bool
+{
+    return preg_match('/^\s*Bearer(?:\s|$)/i', $auth) === 1;
 }
 
 function has_bearer_authorization(string $auth): bool
@@ -158,16 +293,26 @@ function normalize_bearer_authorization(string $auth): string
     return 'Bearer ' . $matches[1];
 }
 
-function has_mcp_scope(mixed $scopes): bool
+/** @return list<string> */
+function normalize_scopes(mixed $scopes): array
 {
     if (is_string($scopes)) {
         $parts = preg_split('/\s+/', trim($scopes));
         $scopes = $parts === false ? [] : $parts;
     }
     if (!is_array($scopes)) {
-        return false;
+        return [];
     }
-    return in_array('mcp', $scopes, strict: true);
+
+    $normalized = [];
+    // @mago-expect analysis:mixed-assignment
+    foreach ($scopes as $scope) {
+        if (!is_string($scope) || $scope === '') {
+            continue;
+        }
+        $normalized[] = $scope;
+    }
+    return $normalized;
 }
 
 function current_user_can_access_mcp(): bool
@@ -175,42 +320,53 @@ function current_user_can_access_mcp(): bool
     return \novamira_current_user_can_manage();
 }
 
-function request_targets_mcp_route(): bool
+function has_existing_identity(mixed $user): bool
 {
-    $rest_route = $_GET['rest_route'] ?? null;
-    if (is_string($rest_route) && is_mcp_route('/' . ltrim($rest_route, characters: '/'))) {
-        return true;
-    }
-
-    $request_uri = $_SERVER['REQUEST_URI'] ?? '';
-    if ($request_uri === '') {
-        return false;
-    }
-
-    $path = parse_url($request_uri, PHP_URL_PATH);
-    if (!is_string($path)) {
-        return false;
-    }
-    $path = rawurldecode($path);
-
-    if (function_exists('rest_url')) {
-        $mcp_path = parse_url(rest_url('mcp/novamira-oauth'), PHP_URL_PATH);
-        if (is_string($mcp_path) && path_matches_prefix($path, $mcp_path)) {
-            return true;
-        }
-    }
-
-    $rest_prefix = function_exists('rest_get_url_prefix') ? rest_get_url_prefix() : 'wp-json';
-    $rest_prefix = trim($rest_prefix, characters: '/');
-    if ($rest_prefix === '') {
-        return false;
-    }
-
-    return preg_match('#/' . preg_quote($rest_prefix, delimiter: '#') . '/mcp/novamira-oauth(?:/|$)#', $path) === 1;
+    return $user !== null && $user !== false && $user !== 0 && $user !== '0';
 }
 
-function path_matches_prefix(string $path, string $prefix): bool
+/**
+ * Request-local proof and error storage. PHP normally serves one request per process; reset at the
+ * start of determine_current_user also keeps persistent test/worker environments isolated.
+ *
+ * @return array{identity: array{user_id: int, scopes: list<string>}|null, error: WP_Error|null}
+ */
+function &request_context(): array
 {
-    $prefix = rtrim($prefix, characters: '/');
-    return $prefix !== '' && ($path === $prefix || str_starts_with($path, $prefix . '/'));
+    static $context = ['identity' => null, 'error' => null];
+    return $context;
+}
+
+function reset_request_context(): void
+{
+    $context = &request_context();
+    $context = ['identity' => null, 'error' => null];
+}
+
+/** @param list<string> $scopes */
+function record_oauth_identity(int $user_id, array $scopes): void
+{
+    $context = &request_context();
+    $context['identity'] = ['user_id' => $user_id, 'scopes' => $scopes];
+    $context['error'] = null;
+}
+
+function record_authentication_error(string $message, int $status = 401): void
+{
+    $context = &request_context();
+    $context['identity'] = null;
+    $context['error'] = new WP_Error('rest_oauth_error', $message, ['status' => $status]);
+}
+
+/** @return array{user_id: int, scopes: list<string>}|null */
+function request_oauth_identity(): ?array
+{
+    $context = &request_context();
+    return $context['identity'];
+}
+
+function request_authentication_error(): ?WP_Error
+{
+    $context = &request_context();
+    return $context['error'];
 }

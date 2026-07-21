@@ -35,18 +35,34 @@ if (!function_exists('novamira_likely_self_signed_https')) {
     }
 }
 
+// The suite shares one WP_Error stub across test files, and whichever file loads first defines it.
+// Keep the full accessor set here so the tests that read the code or data (MiddlewareTest) work
+// regardless of load order.
 if (!class_exists('WP_Error')) {
     class WP_Error
     {
+        /** @param array<string, mixed> $data */
         public function __construct(
             private string $code = '',
             private string $message = '',
+            private array $data = [],
         ) {
+        }
+
+        public function get_error_code(): string
+        {
+            return $this->code;
         }
 
         public function get_error_message(): string
         {
             return $this->message;
+        }
+
+        /** @return array<string, mixed> */
+        public function get_error_data(): array
+        {
+            return $this->data;
         }
     }
 }

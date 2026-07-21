@@ -137,7 +137,7 @@ final class CompatibilityStartupTest extends TestCase
                 'wordpress_version' => '6.9.2',
                 'minimum_wordpress_version' => '6.9',
                 'features' => [
-                    'abilities_bearer_auth' => false,
+                    'abilities_bearer_auth' => true,
                     'abilities_read_scope' => false,
                     'agent_context' => false,
                     'rest_skills' => false,
