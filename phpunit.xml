@@ -4,8 +4,9 @@
     bootstrap="vendor/autoload.php"
     colors="true">
     <testsuites>
-        <testsuite name="OAuth">
+        <testsuite name="Server">
             <directory>tests/oauth</directory>
+            <directory>tests/integration</directory>
         </testsuite>
     </testsuites>
 </phpunit>

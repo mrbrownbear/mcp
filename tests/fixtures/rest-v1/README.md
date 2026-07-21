@@ -2,6 +2,8 @@
 
 These fixtures freeze the server contract consumed by `@novamira/cli` 1.x.
 The full normative contract is in `../../../../novamira-cli/docs/v1-contract.md`.
+The REST-only Phase 1 integration path and fixed CLI server floor are documented
+in [`SERVER_CONTRACT.md`](SERVER_CONTRACT.md).
 The JSON files must remain byte-identical to
 `../../../../novamira-cli/fixtures/v1`.
 
