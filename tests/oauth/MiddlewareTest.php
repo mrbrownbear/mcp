@@ -77,13 +77,18 @@ if (!class_exists('WP_Ability')) {
     class WP_Ability
     {
         /** @param array<string, mixed> $meta */
-        public function __construct(private array $meta)
+        public function __construct(private array $meta, private mixed $result = null)
         {
         }
 
         public function get_meta_item(string $key, mixed $default = null): mixed
         {
             return $this->meta[$key] ?? $default;
+        }
+
+        public function execute(mixed $input = null): mixed
+        {
+            return $this->result instanceof Closure ? ($this->result)($input) : $this->result;
         }
     }
 }
@@ -94,10 +99,16 @@ if (!function_exists('wp_get_ability')) {
     }
 }
 if (!class_exists('WP_REST_Request')) {
-    class WP_REST_Request
+    class WP_REST_Request implements ArrayAccess
     {
-        public function __construct(private string $method = 'GET', private string $route = '')
-        {
+        /** @param array<string, mixed>|null $json */
+        public function __construct(
+            private string $method = 'GET',
+            private string $route = '',
+            private string $body = '',
+            private ?array $json = null,
+            private array $params = [],
+        ) {
         }
 
         public function get_route(): string
@@ -108,6 +119,41 @@ if (!class_exists('WP_REST_Request')) {
         public function get_method(): string
         {
             return $this->method;
+        }
+
+        public function get_body(): string
+        {
+            return $this->body;
+        }
+
+        /** @return array<string, mixed>|null */
+        public function get_json_params(): ?array
+        {
+            return $this->json;
+        }
+
+        public function offsetExists(mixed $offset): bool
+        {
+            return is_string($offset) && array_key_exists($offset, $this->params);
+        }
+
+        public function offsetGet(mixed $offset): mixed
+        {
+            return is_string($offset) ? ($this->params[$offset] ?? null) : null;
+        }
+
+        public function offsetSet(mixed $offset, mixed $value): void
+        {
+            if (is_string($offset)) {
+                $this->params[$offset] = $value;
+            }
+        }
+
+        public function offsetUnset(mixed $offset): void
+        {
+            if (is_string($offset)) {
+                unset($this->params[$offset]);
+            }
         }
     }
 }

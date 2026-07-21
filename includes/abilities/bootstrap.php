@@ -19,6 +19,7 @@ function novamira_boot_ability_rest_surface(): bool
     }
 
     require_once dirname(__DIR__) . '/rest-shim.php';
+    add_action('rest_api_init', callback: 'novamira_register_ability_run_rest_shim');
 
     return true;
 }
@@ -107,6 +108,7 @@ function novamira_register_builtin_abilities(): void
     require_once $dir . 'enable-file.php';
     require_once $dir . 'list-directory.php';
     require_once $dir . 'discover-abilities.php';
+    require_once $dir . 'agent-context.php';
     require_once $dir . 'run-wp-cli.php';
     novamira_load_gutenberg_abilities();
 }

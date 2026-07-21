@@ -35,9 +35,9 @@ function novamira_rest_api_features(): array
     return [
         'abilities_bearer_auth' => true,
         'abilities_read_scope' => true,
-        'agent_context' => false,
-        'rest_skills' => false,
-        'generalized_execution_shim' => false,
+        'agent_context' => true,
+        'rest_skills' => true,
+        'generalized_execution_shim' => true,
     ];
 }
 
