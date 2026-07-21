@@ -76,17 +76,26 @@ final class BearerAuthenticationTest extends TestCase
         );
     }
 
-    public function testValidTokenReturnsBoundSubjectAndScopes(): void
+    #[DataProvider('issuedScopeProvider')]
+    public function testValidTokenReturnsBoundSubjectAndExactIssuedScopes(array $scopes): void
     {
-        $token = $this->accessToken(new \DateTimeImmutable('+1 hour'));
+        $token = $this->accessToken(new \DateTimeImmutable('+1 hour'), $scopes);
 
         self::assertSame(
-            ['user_id' => 73, 'scopes' => ['mcp']],
+            ['user_id' => 73, 'scopes' => $scopes],
             \Novamira\OAuth\Middleware\validate_bearer_credential(
                 'Bearer ' . $token,
                 $this->resourceServer(revoked: false),
             ),
         );
+    }
+
+    /** @return iterable<string, array{list<string>}> */
+    public static function issuedScopeProvider(): iterable
+    {
+        yield 'readonly' => [['abilities:read']];
+        yield 'full' => [['abilities']];
+        yield 'legacy' => [['mcp']];
     }
 
     #[DataProvider('invalidCredentialProvider')]
@@ -95,8 +104,8 @@ final class BearerAuthenticationTest extends TestCase
         $server = $this->resourceServer(revoked: $kind === 'revoked');
         $token = match ($kind) {
             'malformed' => 'not-a-jwt',
-            'expired' => $this->accessToken(new \DateTimeImmutable('-1 hour')),
-            'revoked' => $this->accessToken(new \DateTimeImmutable('+1 hour')),
+            'expired' => $this->accessToken(new \DateTimeImmutable('-1 hour'), ['mcp']),
+            'revoked' => $this->accessToken(new \DateTimeImmutable('+1 hour'), ['mcp']),
             'wrong audience' => $this->jwtForAudience('https://evil.test/wp-json/mcp/novamira-oauth'),
         };
 
@@ -113,14 +122,17 @@ final class BearerAuthenticationTest extends TestCase
         yield 'wrong audience' => ['wrong audience'];
     }
 
-    private function accessToken(\DateTimeImmutable $expiry): string
+    /** @param list<string> $scopes */
+    private function accessToken(\DateTimeImmutable $expiry, array $scopes): string
     {
         $entity = new AccessTokenEntity();
         $entity->setPrivateKey(new CryptKey($this->privateKey, passPhrase: null, keyPermissionsCheck: false));
         $entity->setIdentifier('token-' . bin2hex(random_bytes(8)));
         $entity->setUserIdentifier('73');
         $entity->setExpiryDateTime($expiry);
-        $entity->addScope($this->scope('mcp'));
+        foreach ($scopes as $scope) {
+            $entity->addScope($this->scope($scope));
+        }
 
         return (string) $entity;
     }

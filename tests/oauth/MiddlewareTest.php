@@ -73,6 +73,26 @@ if (!class_exists('WP_Error')) {
         }
     }
 }
+if (!class_exists('WP_Ability')) {
+    class WP_Ability
+    {
+        /** @param array<string, mixed> $meta */
+        public function __construct(private array $meta)
+        {
+        }
+
+        public function get_meta_item(string $key, mixed $default = null): mixed
+        {
+            return $this->meta[$key] ?? $default;
+        }
+    }
+}
+if (!function_exists('wp_get_ability')) {
+    function wp_get_ability(string $name): mixed
+    {
+        return $GLOBALS['novamira_test_abilities'][$name] ?? null;
+    }
+}
 if (!class_exists('WP_REST_Request')) {
     class WP_REST_Request
     {
@@ -122,6 +142,17 @@ final class MiddlewareTest extends TestCase
         $GLOBALS['novamira_test_current_user_can_manage'] = true;
         $GLOBALS['novamira_test_current_user_id'] = 0;
         $GLOBALS['novamira_test_filters'] = [];
+        $GLOBALS['novamira_test_abilities'] = [
+            'novamira/read-file' => new WP_Ability([
+                'show_in_rest' => true,
+                'annotations' => ['readonly' => true],
+            ]),
+            'novamira/write-file' => new WP_Ability([
+                'show_in_rest' => true,
+                'annotations' => ['readonly' => false],
+            ]),
+            'novamira/unannotated' => new WP_Ability(['show_in_rest' => true]),
+        ];
         \Novamira\OAuth\Middleware\reset_request_context();
     }
 
@@ -136,6 +167,7 @@ final class MiddlewareTest extends TestCase
             $GLOBALS['novamira_test_current_user_id'],
             $GLOBALS['novamira_test_filters'],
             $GLOBALS['novamira_test_home'],
+            $GLOBALS['novamira_test_abilities'],
         );
         \Novamira\OAuth\Middleware\reset_request_context();
     }
@@ -176,6 +208,7 @@ final class MiddlewareTest extends TestCase
             ['rest_request_before_callbacks', 'Novamira\\OAuth\\Middleware\\authorize_routed_request', 5, 3],
             $GLOBALS['novamira_test_filters'],
         );
+        self::assertCount(3, $GLOBALS['novamira_test_filters']);
     }
 
     public function testMcpRouteMatchesOnlyTheOauthServer(): void
@@ -353,15 +386,81 @@ final class MiddlewareTest extends TestCase
         self::assertSame(403, $result->get_error_data()['status']);
     }
 
-    public function testAllowedAbilityRouteAcceptsValidCurrentGrant(): void
+    public function testReadonlyGrantAllowsListItemAndExplicitlyReadonlyExecution(): void
     {
-        $this->authenticateOauthUser();
+        $this->authenticateOauthUser(['abilities:read']);
 
-        self::assertNull(\Novamira\OAuth\Middleware\authorize_routed_request(
-            null,
-            null,
+        foreach ([
+            new WP_REST_Request('GET', '/wp-abilities/v1/abilities'),
+            new WP_REST_Request('GET', '/wp-abilities/v1/abilities/novamira/read-file'),
             new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/read-file/run'),
+        ] as $request) {
+            self::assertNull(\Novamira\OAuth\Middleware\authorize_routed_request(null, null, $request));
+        }
+    }
+
+    public function testReadonlyGrantDeniesMutatingAndUnannotatedExecution(): void
+    {
+        foreach (['write-file', 'unannotated', 'missing'] as $ability) {
+            $this->authenticateOauthUser(['abilities:read']);
+            $result = \Novamira\OAuth\Middleware\authorize_routed_request(
+                null,
+                null,
+                new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/' . $ability . '/run'),
+            );
+            self::assertInstanceOf(WP_Error::class, $result);
+            self::assertSame(403, $result->get_error_data()['status']);
+        }
+    }
+
+    public function testFullGrantAllowsReadonlyAndMutatingExecutionButNotMcp(): void
+    {
+        foreach (['read-file', 'write-file', 'unannotated'] as $ability) {
+            $this->authenticateOauthUser(['abilities']);
+            self::assertNull(\Novamira\OAuth\Middleware\authorize_routed_request(
+                null,
+                null,
+                new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/' . $ability . '/run'),
+            ));
+        }
+
+        $this->authenticateOauthUser(['abilities']);
+        self::assertInstanceOf(WP_Error::class, \Novamira\OAuth\Middleware\authorize_routed_request(
+            null,
+            null,
+            new WP_REST_Request('POST', '/mcp/novamira-oauth'),
         ));
+    }
+
+    public function testChallengesDeclareTheMinimumRouteSpecificScope(): void
+    {
+        self::assertSame(
+            'abilities:read',
+            \Novamira\OAuth\Middleware\route_required_scope('/wp-abilities/v1/abilities', 'GET'),
+        );
+        self::assertSame(
+            'abilities:read',
+            \Novamira\OAuth\Middleware\route_required_scope(
+                '/novamira/v1/abilities/novamira/read-file/run',
+                'POST',
+            ),
+        );
+        self::assertSame(
+            'abilities',
+            \Novamira\OAuth\Middleware\route_required_scope(
+                '/novamira/v1/abilities/novamira/write-file/run',
+                'POST',
+            ),
+        );
+        self::assertSame('mcp', \Novamira\OAuth\Middleware\route_required_scope('/mcp/novamira-oauth', 'POST'));
+
+        $response = \Novamira\OAuth\Middleware\challenge_unauthenticated(
+            null,
+            null,
+            new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/write-file/run'),
+        );
+        self::assertInstanceOf(WP_REST_Response::class, $response);
+        self::assertStringContainsString('scope="abilities"', $response->headers['WWW-Authenticate']);
     }
 
     public function testLegacyMcpGrantRemainsIsolatedToItsExistingEndpoint(): void

@@ -129,7 +129,11 @@ final class CompatibilityStartupTest extends TestCase
         self::assertSame('https://example.test/wp-json/mcp/novamira-oauth', $metadata['resource']);
         self::assertSame(['https://example.test'], $metadata['authorization_servers']);
         self::assertSame(['header'], $metadata['bearer_methods_supported']);
-        self::assertSame(['mcp'], $metadata['scopes_supported']);
+        self::assertSame(['abilities:read', 'abilities', 'mcp'], $metadata['scopes_supported']);
+        self::assertSame(
+            ['abilities:read', 'abilities', 'mcp'],
+            \Novamira\OAuth\Endpoints\Discovery\authorization_server_document()['scopes_supported'],
+        );
         self::assertSame(
             [
                 'plugin_version' => '1.10.1',
@@ -138,7 +142,7 @@ final class CompatibilityStartupTest extends TestCase
                 'minimum_wordpress_version' => '6.9',
                 'features' => [
                     'abilities_bearer_auth' => true,
-                    'abilities_read_scope' => false,
+                    'abilities_read_scope' => true,
                     'agent_context' => false,
                     'rest_skills' => false,
                     'generalized_execution_shim' => false,

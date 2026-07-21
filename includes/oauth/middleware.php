@@ -27,14 +27,13 @@ function register(): void
     add_filter('rest_authentication_errors', __NAMESPACE__ . '\\reject_invalid_bearer', priority: 5);
 
     // This hook runs only after WP_REST_Server matches a registered route and before its permission
-    // callback. A separate legacy challenge remains pre-dispatch for missing MCP credentials.
+    // callback, so both OAuth authorization and missing-credential challenges use authoritative routing.
     add_filter(
         'rest_request_before_callbacks',
         __NAMESPACE__ . '\\authorize_routed_request',
         priority: 5,
         accepted_args: 3,
     );
-    add_filter('rest_pre_dispatch', __NAMESPACE__ . '\\challenge_unauthenticated', priority: 10, accepted_args: 3);
 }
 
 /**
@@ -155,7 +154,7 @@ function authorize_routed_request(mixed $result, mixed $handler, WP_REST_Request
     $identity = request_oauth_identity();
 
     if ($identity === null) {
-        return $result;
+        return challenge_unauthenticated($result, $handler, $request);
     }
 
     if (!oauth_identity_may_use_route($route, $method)) {
@@ -167,15 +166,14 @@ function authorize_routed_request(mixed $result, mixed $handler, WP_REST_Request
         );
     }
 
-    // Keep legacy grants isolated to their existing protocol endpoint. S04 adds lifecycle support
-    // and readonly Ability resolution; this boundary already fails closed for unissued/unknown grants.
     if (!scopes_authorize_routed_request($identity['scopes'], $route, $method)) {
-        send_www_authenticate('insufficient_scope');
+        $required_scope = route_required_scope($route, $method);
+        send_www_authenticate('insufficient_scope', $required_scope ?? 'abilities');
         return new WP_Error('rest_oauth_error', 'Token does not grant access to this REST route.', ['status' => 403]);
     }
 
     if (!current_user_can_access_mcp()) {
-        send_www_authenticate('insufficient_scope');
+        send_www_authenticate('insufficient_scope', route_required_scope($route, $method) ?? 'abilities');
         return new WP_Error('rest_oauth_error', 'User is no longer allowed to manage Novamira.', [
             'status' => 403,
         ]);
@@ -185,39 +183,41 @@ function authorize_routed_request(mixed $result, mixed $handler, WP_REST_Request
     return $result;
 }
 
-function challenge_unauthenticated(mixed $result, mixed $server, WP_REST_Request $request): mixed
+function challenge_unauthenticated(mixed $result, mixed $handler, WP_REST_Request $request): mixed
 {
-    if ($result !== null || !is_mcp_route($request->get_route())) {
+    if ($result !== null || get_current_user_id() > 0 || has_bearer_scheme(get_authorization_header())) {
         return $result;
     }
-    if (has_bearer_scheme(get_authorization_header())) {
-        return null;
+
+    $required_scope = route_required_scope($request->get_route(), strtoupper($request->get_method()));
+    if ($required_scope === null) {
+        return $result;
     }
 
     $response = new WP_REST_Response([
         'code' => 'rest_oauth_required',
         'message' => 'OAuth authentication required.',
     ], 401);
-    $response->header('WWW-Authenticate', www_authenticate_header());
+    $response->header('WWW-Authenticate', www_authenticate_header(scope: $required_scope));
     return $response;
 }
 
 /**
  * RFC 6750 WWW-Authenticate challenge value.
  */
-function www_authenticate_header(?string $error = null): string
+function www_authenticate_header(?string $error = null, string $scope = 'mcp'): string
 {
     $value = 'Bearer resource_metadata="' . \Novamira\OAuth\Endpoints\Discovery\protected_resource_metadata_url() . '"';
     if ($error !== null) {
         $value .= ', error="' . $error . '"';
     }
-    return $value . ', scope="mcp"';
+    return $value . ', scope="' . $scope . '"';
 }
 
-function send_www_authenticate(string $error): void
+function send_www_authenticate(string $error, string $scope = 'mcp'): void
 {
     if (!headers_sent()) {
-        header('WWW-Authenticate: ' . www_authenticate_header($error));
+        header('WWW-Authenticate: ' . www_authenticate_header($error, $scope));
     }
 }
 
@@ -254,14 +254,63 @@ function scopes_authorize_routed_request(array $scopes, string $route, string $m
     if (is_mcp_route($route)) {
         return in_array('mcp', $scopes, strict: true);
     }
-
-    // S04 resolves readonly execution before admitting abilities:read. Until then, the narrow grant
-    // may inspect list/item routes only; full Ability grants may use every structural route above.
     if (in_array('abilities', $scopes, strict: true)) {
         return true;
     }
+    if (!in_array('abilities:read', $scopes, strict: true)) {
+        return false;
+    }
 
-    return in_array('abilities:read', $scopes, strict: true) && strtoupper($method) !== 'POST';
+    return strtoupper($method) !== 'POST' || run_route_ability_is_readonly($route);
+}
+
+function route_required_scope(string $route, string $method): ?string
+{
+    if (!oauth_identity_may_use_route($route, $method)) {
+        return null;
+    }
+    if (is_mcp_route($route)) {
+        return 'mcp';
+    }
+    if (strtoupper($method) !== 'POST') {
+        return 'abilities:read';
+    }
+
+    return run_route_ability_is_readonly($route) ? 'abilities:read' : 'abilities';
+}
+
+function run_route_ability_is_readonly(string $route): bool
+{
+    $name = run_route_ability_name($route);
+    if ($name === null || !function_exists('wp_get_ability')) {
+        return false;
+    }
+
+    $ability = wp_get_ability($name);
+    if (!$ability instanceof \WP_Ability || $ability->get_meta_item('show_in_rest', false) !== true) {
+        return false;
+    }
+    // @mago-expect analysis:mixed-assignment
+    $annotations = $ability->get_meta_item('annotations', []);
+
+    return is_array($annotations) && ($annotations['readonly'] ?? null) === true;
+}
+
+function run_route_ability_name(string $route): ?string
+{
+    $prefix = '/novamira/v1/abilities/';
+    $suffix = '/run';
+    if (!str_starts_with($route, $prefix) || !str_ends_with($route, $suffix)) {
+        return null;
+    }
+
+    $encoded = substr($route, strlen($prefix), -strlen($suffix));
+    $segments = array_values(array_filter(explode('/', $encoded), static fn(string $part): bool => $part !== ''));
+    if (count($segments) < 2) {
+        return null;
+    }
+
+    return implode('/', array_map('rawurldecode', $segments));
 }
 
 function get_authorization_header(): string

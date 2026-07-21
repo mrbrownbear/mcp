@@ -96,18 +96,15 @@ function handle(): void
         return;
     }
 
-    // Keep the scopes this server recognizes (see \Novamira\OAuth\supported_scopes()); the token is
-    // always granted `mcp` regardless (ScopeRepository::finalizeScopes), so an empty or unrecognized
-    // request still yields mcp access. Some proxies request WordPress-style `read`/`write` rather
-    // than `mcp`, so rejecting those would break them for no gain.
-    $scope_parts = array_values(array_intersect(
-        array_filter(explode(' ', get_param('scope'))),
-        \Novamira\OAuth\supported_scopes(),
-    ));
-    if ($scope_parts === []) {
-        $scope_parts = ['mcp'];
+    $scope = \Novamira\OAuth\normalize_authorization_scope(get_param('scope'));
+    if ($scope === null) {
+        wp_die(
+            esc_html__('The requested OAuth scope is invalid or mixes legacy and Ability access.', domain: 'novamira'),
+            title: '',
+            args: ['response' => 400],
+        );
+        return;
     }
-    $scope = implode(' ', $scope_parts);
 
     $resource = get_param('resource');
     if (!\Novamira\OAuth\resource_request_allowed($resource, \Novamira\OAuth\resource_identifier())) {

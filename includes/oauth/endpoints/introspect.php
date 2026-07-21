@@ -41,6 +41,7 @@ function handle(WP_REST_Request $req): WP_REST_Response
 
         $user_id = (string) $validated->getAttribute('oauth_user_id');
         $jti = (string) $validated->getAttribute('oauth_access_token_id');
+        $scope = granted_scope_string($validated->getAttribute('oauth_scopes'));
 
         $exp = 0;
         $iat = 0;
@@ -60,7 +61,7 @@ function handle(WP_REST_Request $req): WP_REST_Response
         return new WP_REST_Response([
             'active' => true,
             'sub' => $user_id,
-            'scope' => 'mcp',
+            'scope' => $scope,
             'jti' => $jti,
             'exp' => $exp,
             'iat' => $iat,
@@ -70,4 +71,25 @@ function handle(WP_REST_Request $req): WP_REST_Response
     } catch (\Throwable $e) {
         return new WP_REST_Response(['active' => false], 200);
     }
+}
+
+function granted_scope_string(mixed $scopes): string
+{
+    if (is_string($scopes)) {
+        $parts = preg_split('/\s+/', trim($scopes));
+        return $parts === false ? '' : implode(' ', $parts);
+    }
+    if (!is_array($scopes)) {
+        return '';
+    }
+
+    $granted = [];
+    // @mago-expect analysis:mixed-assignment
+    foreach ($scopes as $scope) {
+        if (!is_string($scope) || $scope === '') {
+            continue;
+        }
+        $granted[] = $scope;
+    }
+    return implode(' ', $granted);
 }

@@ -60,7 +60,7 @@ function render(): void
     if ($ctx === null) {
         return;
     }
-    render_form($ctx['token'], $ctx['client_name'], $ctx['redirect_uri']);
+    render_form($ctx['token'], $ctx['client_name'], $ctx['redirect_uri'], $ctx['scope']);
 }
 
 /**
@@ -74,6 +74,7 @@ function render(): void
  *     redirect_uri: string,
  *     state: string,
  *     client_name: string,
+ *     scope: string,
  * }|null
  */
 function resolve_pending(): ?array
@@ -121,6 +122,7 @@ function resolve_pending(): ?array
         'redirect_uri' => (string) ($pending['redirect_uri'] ?? ''),
         'state' => (string) ($pending['state'] ?? ''),
         'client_name' => $client->getName(),
+        'scope' => (string) ($pending['scope'] ?? 'mcp'),
     ];
 }
 
@@ -178,19 +180,36 @@ function render_post(string $token, array $pending, string $redirect_uri, string
     }
 }
 
-function render_form(string $token, string $client_name, string $redirect_uri): void
+function render_form(string $token, string $client_name, string $redirect_uri, string $scope): void
 {
     $redirect_destination = redirect_destination_label($redirect_uri);
+    $grant = consent_grant_details($scope);
 
     \novamira_render_admin_header();
     echo '<div class="wrap">';
     echo '<h1>' . esc_html__('Authorize Application', domain: 'novamira') . '</h1>';
     echo
         sprintf(
-            '<p>' . esc_html__('%s is requesting MCP access to your WordPress site.', domain: 'novamira') . '</p>',
+            '<p>' . esc_html__('%1$s is requesting %2$s.', domain: 'novamira') . '</p>',
             '<strong>' . esc_html($client_name) . '</strong>',
+            '<strong>' . esc_html($grant['label']) . '</strong>',
         )
     ;
+    echo '<p>' . esc_html($grant['description']) . '</p>';
+    echo
+        '<p><strong>'
+            . esc_html__('Requested OAuth scope:', domain: 'novamira')
+            . '</strong> <code>'
+            . esc_html($scope)
+            . '</code></p>'
+    ;
+    if ($grant['risks'] !== []) {
+        echo '<p><strong>' . esc_html__('This grant can:', domain: 'novamira') . '</strong></p><ul>';
+        foreach ($grant['risks'] as $risk) {
+            echo '<li>' . esc_html($risk) . '</li>';
+        }
+        echo '</ul>';
+    }
     echo
         '<p><strong>'
             . esc_html__('Redirect destination:', domain: 'novamira')
@@ -220,6 +239,49 @@ function render_form(string $token, string $client_name, string $redirect_uri): 
     ;
     echo '</form>';
     echo '</div>';
+}
+
+/**
+ * @return array{label: string, description: string, risks: list<string>}
+ */
+function consent_grant_details(string $scope): array
+{
+    if (str_contains(' ' . $scope . ' ', ' abilities ')) {
+        return [
+            'label' => __('full Ability access to your WordPress site', domain: 'novamira'),
+            'description' => __(
+                'Full access permits execution of REST-visible abilities registered by Novamira and compatible third-party plugins, including abilities that can execute code, change content or settings, modify files, and create temporary administrator access.',
+                domain: 'novamira',
+            ),
+            'risks' => [
+                __('Execute PHP and WP-CLI.', domain: 'novamira'),
+                __('Read, write, and delete server files.', domain: 'novamira'),
+                __('Change WordPress content and settings.', domain: 'novamira'),
+                __('Create temporary administrator access.', domain: 'novamira'),
+                __('Execute REST-visible abilities registered by compatible plugins.', domain: 'novamira'),
+            ],
+        ];
+    }
+
+    if (str_contains(' ' . $scope . ' ', ' abilities:read ')) {
+        return [
+            'label' => __('readonly Ability access to your WordPress site', domain: 'novamira'),
+            'description' => __(
+                'Readonly access permits Ability discovery and execution only when an Ability explicitly declares readonly=true.',
+                domain: 'novamira',
+            ),
+            'risks' => [],
+        ];
+    }
+
+    return [
+        'label' => __('legacy MCP access to your WordPress site', domain: 'novamira'),
+        'description' => __(
+            'Legacy MCP access can execute Novamira capabilities through its existing MCP endpoint.',
+            domain: 'novamira',
+        ),
+        'risks' => [],
+    ];
 }
 
 function redirect_destination_label(string $redirect_uri): string

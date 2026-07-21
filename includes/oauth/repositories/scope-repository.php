@@ -50,16 +50,19 @@ final class ScopeRepository implements ScopeRepositoryInterface
             strict: true,
         )));
 
-        // Always grant `mcp`: the MCP middleware admits a token only when it carries that scope, and
-        // this server's access is all-or-nothing, so whatever the client requested maps onto it.
-        foreach ($granted as $scope) {
-            if ($scope->getIdentifier() === 'mcp') {
-                return $granted;
-            }
+        $ability_grants = array_values(array_filter($granted, static fn(ScopeEntityInterface $scope): bool => in_array(
+            $scope->getIdentifier(),
+            ['abilities:read', 'abilities'],
+            strict: true,
+        )));
+        if ($ability_grants !== []) {
+            // `abilities` semantically includes read access, but the explicit grant remains unchanged.
+            return $ability_grants;
         }
+
+        // Preserve the old read/write alias behavior only for legacy authorization flows.
         $mcp = new ScopeEntity();
         $mcp->setIdentifier('mcp');
-        $granted[] = $mcp;
-        return $granted;
+        return [$mcp];
     }
 }

@@ -23,46 +23,48 @@ use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
 use Novamira\OAuth\Repositories\ScopeEntity;
 use Novamira\OAuth\Repositories\ScopeRepository;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../../includes/oauth/bootstrap.php';
 require_once __DIR__ . '/../../includes/oauth/repositories/scope-repository.php';
 
-/**
- * The server advertises only the `mcp` scope, but some MCP proxies request the WordPress-ecosystem
- * defaults `read`/`write`. Those are accepted as aliases and every issued token is still granted
- * `mcp`, which is the only scope the middleware admits. Access is all-or-nothing, so the aliases
- * carry no extra privilege.
- */
 final class ScopeRepositoryTest extends TestCase
 {
-    public function testAcceptsMcpAndWordPressAliasesOnly(): void
+    public function testAcceptsAbilityMcpAndCompatibilityAliasScopesOnly(): void
     {
         $repo = new ScopeRepository();
-        self::assertNotNull($repo->getScopeEntityByIdentifier('mcp'));
-        self::assertNotNull($repo->getScopeEntityByIdentifier('read'));
-        self::assertNotNull($repo->getScopeEntityByIdentifier('write'));
+        foreach (['abilities:read', 'abilities', 'mcp', 'read', 'write'] as $scope) {
+            self::assertNotNull($repo->getScopeEntityByIdentifier($scope));
+        }
         self::assertNull($repo->getScopeEntityByIdentifier('admin'));
         self::assertNull($repo->getScopeEntityByIdentifier(''));
     }
 
-    public function testFinalizeAlwaysGrantsMcp(): void
+    #[DataProvider('finalizedScopeProvider')]
+    public function testFinalizeNeverBroadensTheExplicitGrant(array $requested, array $expected): void
     {
         $repo = new ScopeRepository();
         $client = $this->createMock(ClientEntityInterface::class);
 
-        // A read/write request still yields mcp on the token.
-        self::assertContains('mcp', $this->ids($repo->finalizeScopes(
-            [$this->scope('read'), $this->scope('write')],
+        self::assertSame($expected, $this->ids($repo->finalizeScopes(
+            array_map($this->scope(...), $requested),
             'authorization_code',
             $client,
         )));
+    }
 
-        // An mcp request stays exactly mcp (no duplicate).
-        self::assertSame(['mcp'], $this->ids($repo->finalizeScopes([$this->scope('mcp')], 'authorization_code', $client)));
-
-        // An empty grant is normalized to mcp.
-        self::assertSame(['mcp'], $this->ids($repo->finalizeScopes([], 'authorization_code', $client)));
+    /** @return iterable<string, array{list<string>, list<string>}> */
+    public static function finalizedScopeProvider(): iterable
+    {
+        yield 'readonly' => [['abilities:read'], ['abilities:read']];
+        yield 'full remains full rather than adding read' => [['abilities'], ['abilities']];
+        yield 'explicit ability combination' => [['abilities:read', 'abilities'], ['abilities:read', 'abilities']];
+        yield 'mcp' => [['mcp'], ['mcp']];
+        yield 'legacy read alias' => [['read'], ['mcp']];
+        yield 'legacy write aliases' => [['read', 'write'], ['mcp']];
+        yield 'empty legacy default' => [[], ['mcp']];
+        yield 'mixed input fails narrow to ability grant' => [['mcp', 'abilities:read'], ['abilities:read']];
     }
 
     private function scope(string $id): ScopeEntity
