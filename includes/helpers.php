@@ -1040,6 +1040,8 @@ function novamira_build_building_context_lines(): array
         '',
         'Active theme: ' . $theme_desc . '.',
         '',
+        'Before any visual work (building or restyling a page, template, section, or component), load the `novamira-design` skill and follow it.',
+        '',
         'Before building or restructuring a page\'s content or layout, check the installed-plugins inventory above for page builders (which replace the editor) and block libraries (which extend Gutenberg), then ask the user which approach to use: a page builder, Gutenberg, classic theme templates, a child theme, or a custom theme. Ask once and follow that choice; do not mix approaches (e.g. Gutenberg blocks in a page-builder page).',
     ];
 }

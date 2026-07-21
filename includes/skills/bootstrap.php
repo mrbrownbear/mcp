@@ -45,10 +45,14 @@ add_action('admin_enqueue_scripts', __NAMESPACE__ . '\\Admin\\enqueue_assets');
 add_filter('novamira_skill_lookup_sources', __NAMESPACE__ . '\\BuiltIn\\register');
 add_filter('novamira_discover_abilities_instructions', __NAMESPACE__ . '\\Catalog\\inject', priority: 10);
 
+// The 'skill' category must register in the categories phase; wp_register_ability_category()
+// is only honored during wp_abilities_api_categories_init, so registering it on
+// wp_abilities_api_init (as before) was silently dropped and every ability below it —
+// declaring 'category' => 'skill' — was rejected. Match the base plugin and the design module.
+add_action('wp_abilities_api_categories_init', __NAMESPACE__ . '\\Abilities\\register_categories', priority: 5);
 // MCP prompt-mode skill abilities and the canonical skill-get must register
 // after any pre-existing owner so we can save a reference and delegate when
 // our lookup misses (priority 999). See abilities/skill-get.php for details.
-add_action('wp_abilities_api_categories_init', __NAMESPACE__ . '\\Abilities\\register_categories', priority: 5);
 add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Prompts\\register_dynamic_abilities', priority: 500);
 add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\SkillGet\\register', priority: 999);
 add_action('wp_abilities_api_init', __NAMESPACE__ . '\\Abilities\\SkillWrite\\register', priority: 999);

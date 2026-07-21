@@ -8,10 +8,13 @@ docs/**
 vendor/php-stubs/**
 vendor/bin/**
 stubs/**
+tests/**
+phpunit.xml
 release-info.json
 CHANGELOG.txt
 CLAUDE.md
 GEMINI.md
+AGENTS.md
 Makefile
 mago.toml
 composer.json
@@ -21,6 +24,7 @@ package.json
 bun.lock
 tsconfig.json
 novamira-visual/src/**
+novamira-visual/stubs/**
 novamira-visual/packages/**
 novamira-visual/node_modules/**
 novamira-visual/docs/**

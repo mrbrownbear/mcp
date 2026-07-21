@@ -34,7 +34,7 @@ function inject(mixed $instructions): mixed
         return $instructions;
     }
 
-    return render($skills) . "\n" . $instructions;
+    return $instructions . "\n" . render($skills);
 }
 
 /**
@@ -50,7 +50,7 @@ function render(array $skills): string
         '',
         'Each entry shows its source badge: `(User)` for skills the site admin created, plugin-specific labels for skills contributed by other plugins.',
         '',
-        'When a skill description matches the user\'s request, call `novamira/skill-get` with the slug to load its full instructions before starting work.',
+        'If a listed skill matches the request, load its full instructions with `novamira/skill-get` before starting the work — not after.',
         '',
     ];
     foreach ($skills as $skill) {

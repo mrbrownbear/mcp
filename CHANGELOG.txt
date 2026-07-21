@@ -1,3 +1,7 @@
+v1.10.0 - 2026/07/21
+* New: Novamira Design. AI agents establish one saved design direction for your site and build every page within it, guarded by anti-slop checks; the new Design page lets you preview, import, edit and activate directions. Companion skills cover the workflow, from the design brief to the finished pages.
+* Minor Fixes
+
 v1.9.2 - 2026/07/15
 * New: ChatGPT support. Connect ChatGPT to your site with OAuth sign-in through its developer-mode custom connector.
 * Tweak: Overwriting a post through the Gutenberg pending-change flow is now treated as a destructive action, so your AI client asks before replacing content.
