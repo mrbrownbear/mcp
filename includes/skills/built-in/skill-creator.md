@@ -1,9 +1,4 @@
 ---
-# SPDX-FileCopyrightText: 2024 Anthropic, PBC
-# SPDX-FileCopyrightText: 2026 Ovation S.r.l. <dev@novamira.ai>
-# SPDX-License-Identifier: Apache-2.0
-# Adapted from Anthropic's skill-creator (Apache-2.0) for Novamira's flat
-# single-document skill model. Original: https://github.com/anthropics/skills
 name: skill-creator
 description: Guidance for creating and refining Novamira skills — the single-document markdown skills stored in WordPress that turn the agent into a specialist for a recurring task. Use when the user asks to "create a skill", "make a skill", "add a skill for X", "refine this skill", or wants to extend the agent with reusable WordPress-specific procedural knowledge.
 enable_prompt: true

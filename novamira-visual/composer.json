@@ -2,7 +2,7 @@
     "name": "novamira/novamira-visual",
     "description": "WordPress builder editor tools exposed through an MCP workspace",
     "type": "wordpress-plugin",
-    "license": "MIT",
+    "license": "AGPL-3.0-or-later",
     "require": {
         "php": ">=8.1"
     },
