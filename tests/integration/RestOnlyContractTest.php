@@ -26,7 +26,7 @@ final class RestOnlyContractTest extends TestCase
         $readToken = $this->authorize($server, $siteUrl, 'abilities:read');
         $catalog = $this->listAllAbilities($server, $siteUrl, $readToken, $forwardingMode);
         self::assertSame(
-            ['novamira/agent-context', 'novamira/read-file', 'novamira/skill-get', 'novamira/write-file'],
+            ['novamira/agent-context', 'novamira/read-file', 'novamira/skill-get', 'novamira/write-file', 'vendor/extension-action'],
             array_column($catalog, 'name'),
         );
 
@@ -61,6 +61,27 @@ final class RestOnlyContractTest extends TestCase
         );
         self::assertSame(['success' => true, 'bytes_written' => 7], $mutation);
 
+        $extensionDenied = $this->request(
+            $server,
+            'POST',
+            $siteUrl . '/wp-json/novamira/v1/abilities/vendor/extension-action/run',
+            ['input' => ['value' => 'extension']],
+            $readToken,
+            $forwardingMode,
+        );
+        self::assertSame(403, $extensionDenied['status']);
+        self::assertSame(
+            ['extension' => 'extension'],
+            $this->runAbility(
+                $server,
+                $siteUrl,
+                'vendor/extension-action',
+                ['value' => 'extension'],
+                $fullToken,
+                $forwardingMode,
+            ),
+        );
+
         $skill = $this->runAbility(
             $server,
             $siteUrl,
@@ -71,6 +92,29 @@ final class RestOnlyContractTest extends TestCase
         );
         self::assertTrue($skill['found']);
         self::assertStringContainsString('# Theme Maintenance', $skill['content']);
+
+        $server->canManage = false;
+        self::assertSame(
+            403,
+            $this->request(
+                $server,
+                'GET',
+                $siteUrl . '/wp-json/wp-abilities/v1/abilities?page=1',
+                token: $fullToken,
+                forwardingMode: $forwardingMode,
+            )['status'],
+        );
+        self::assertSame(
+            403,
+            $this->request(
+                $server,
+                'POST',
+                $siteUrl . '/wp-json/novamira/v1/abilities/novamira/read-file/run',
+                ['input' => ['path' => '/tmp/a']],
+                $fullToken,
+                $forwardingMode,
+            )['status'],
+        );
 
         $requestLog = json_encode($server->requests, JSON_THROW_ON_ERROR);
         self::assertStringNotContainsString('/mcp/', $requestLog);
@@ -112,6 +156,7 @@ final class RestOnlyContractTest extends TestCase
         return new class ($siteUrl, $forwardingMode, $omitContext) {
             /** @var list<array{method: string, url: string, body: mixed, headers: array<string, string>}> */
             public array $requests = [];
+            public bool $canManage = true;
             /** @var array<string, string> */
             private array $codes = [];
 
@@ -162,11 +207,14 @@ final class RestOnlyContractTest extends TestCase
                 if ($scope === null) {
                     return $this->response(401, ['code' => 'rest_oauth_required']);
                 }
+                if (!$this->canManage) {
+                    return $this->response(403, ['code' => 'rest_forbidden']);
+                }
                 if ($path === $rest . '/wp-abilities/v1/abilities') {
                     $page = (int) ($query['page'] ?? 1);
                     $records = $page === 1
                         ? [['name' => 'novamira/agent-context'], ['name' => 'novamira/read-file']]
-                        : [['name' => 'novamira/skill-get'], ['name' => 'novamira/write-file']];
+                        : [['name' => 'novamira/skill-get'], ['name' => 'novamira/write-file'], ['name' => 'vendor/extension-action']];
                     return $this->response(200, $records, ['X-WP-TotalPages' => '2']);
                 }
                 if ($path === $rest . '/wp-abilities/v1/abilities/novamira/read-file') {
@@ -199,6 +247,11 @@ final class RestOnlyContractTest extends TestCase
                         'slug' => 'theme-maintenance',
                         'content' => "# Theme Maintenance\n\nInstructions",
                     ]);
+                }
+                if (str_ends_with($path, '/vendor/extension-action/run')) {
+                    return $scope !== 'abilities'
+                        ? $this->response(403, ['code' => 'rest_oauth_error'])
+                        : $this->response(200, ['extension' => $body['input']['value'] ?? null]);
                 }
 
                 return $this->response(404, ['code' => 'rest_no_route']);
