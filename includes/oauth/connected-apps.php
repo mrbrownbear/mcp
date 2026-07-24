@@ -61,6 +61,20 @@ function render(): void
 
 function handle_post(int $user_id): void
 {
+    $action = $_POST['novamira_action'] ?? '';
+    if ($action === 'delete_admin_client') {
+        check_admin_referer('novamira_connected_apps_delete');
+        $raw = $_POST['client_id'] ?? null;
+        $client_id = is_string($raw) ? sanitize_key($raw) : '';
+        if ($client_id !== '') {
+            // Belt and braces: revoke any tokens the row may have picked up, then drop it.
+            revoke_client_access($client_id, $user_id);
+            (new \Novamira\OAuth\Repositories\ClientRepository())->revoke($client_id);
+        }
+        wp_redirect(add_query_arg(['deleted' => '1'], admin_url('admin.php?page=novamira-connected-apps')));
+        exit();
+    }
+
     check_admin_referer('novamira_connected_apps_revoke');
 
     $raw = $_POST['client_id'] ?? null;
@@ -157,6 +171,7 @@ function render_page(int $user_id): void
 
     if ($apps === []) {
         echo '<p>' . esc_html__('No apps are currently connected to your account.', domain: 'novamira') . '</p>';
+        render_admin_clients_section();
         echo '</div>';
         return;
     }
@@ -200,5 +215,68 @@ function render_page(int $user_id): void
     }
 
     echo '</tbody></table>';
+    render_admin_clients_section();
     echo '</div>';
+}
+
+/**
+ * List client IDs minted from the troubleshooter. They are exempt from the pending cleanup, so
+ * this table is where an admin sees and deletes the ones that were never used.
+ */
+function render_admin_clients_section(): void
+{
+    $clients = (new \Novamira\OAuth\Repositories\ClientRepository())->list_admin_clients();
+
+    $raw_deleted = $_GET['deleted'] ?? null;
+    if (is_string($raw_deleted) && $raw_deleted === '1') {
+        echo
+            '<div class="notice notice-success is-dismissible"><p>'
+                . esc_html__('Client ID deleted.', domain: 'novamira')
+                . '</p></div>'
+        ;
+    }
+
+    if ($clients === []) {
+        return;
+    }
+
+    echo '<h2 style="margin-top:24px;">' . esc_html__('Manually created client IDs', domain: 'novamira') . '</h2>';
+    echo
+        '<p>'
+            . esc_html__(
+                'Created from the connection troubleshooter to bypass a failing automatic registration. Each stays valid until used or deleted here.',
+                domain: 'novamira',
+            )
+            . '</p>'
+    ;
+    echo '<table class="wp-list-table widefat fixed striped">';
+    echo '<thead><tr>';
+    echo '<th>' . esc_html__('Application', domain: 'novamira') . '</th>';
+    echo '<th>' . esc_html__('Client ID', domain: 'novamira') . '</th>';
+    echo '<th>' . esc_html__('Created', domain: 'novamira') . '</th>';
+    echo '<th>' . esc_html__('First used', domain: 'novamira') . '</th>';
+    echo '<th></th>';
+    echo '</tr></thead><tbody>';
+    foreach ($clients as $client) {
+        echo '<tr>';
+        echo '<td><strong>' . esc_html($client['client_name']) . '</strong> ';
+        echo
+            '<span style="font-size:11px; font-weight:600; color:#646970; background:#f0f0f1; border-radius:10px; padding:1px 8px;">'
+                . esc_html__('manually created', domain: 'novamira')
+                . '</span></td>'
+        ;
+        echo '<td><code>' . esc_html($client['client_id']) . '</code></td>';
+        echo '<td>' . esc_html($client['created_at']) . '</td>';
+        echo '<td>' . esc_html($client['last_used_at'] ?? __('Never', domain: 'novamira')) . '</td>';
+        echo '<td>';
+        echo '<form method="post">';
+        wp_nonce_field('novamira_connected_apps_delete');
+        echo '<input type="hidden" name="novamira_action" value="delete_admin_client">';
+        echo '<input type="hidden" name="client_id" value="' . esc_attr($client['client_id']) . '">';
+        echo '<button type="submit" class="button">' . esc_html__('Delete', domain: 'novamira') . '</button>';
+        echo '</form>';
+        echo '</td>';
+        echo '</tr>';
+    }
+    echo '</tbody></table>';
 }

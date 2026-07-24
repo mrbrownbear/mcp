@@ -51,7 +51,7 @@ function challenge_unauthenticated(mixed $result, mixed $server, WP_REST_Request
  */
 function www_authenticate_header(?string $error = null): string
 {
-    $value = 'Bearer resource_metadata="' . home_url('/.well-known/oauth-protected-resource') . '"';
+    $value = 'Bearer resource_metadata="' . \Novamira\OAuth\Endpoints\Discovery\protected_resource_metadata_url() . '"';
     if ($error !== null) {
         $value .= ', error="' . $error . '"';
     }

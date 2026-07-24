@@ -1,3 +1,10 @@
+Unreleased
+* New: A Troubleshoot page runs on-demand checks on your site's AI connection and points at what to fix, including whether a CDN, firewall, or security plugin in front of the site is filtering AI clients. It produces a copyable report.
+* New: A dashboard notice warns administrators when a change on the site stops a previously working AI connection from authenticating, so a connection that suddenly breaks does not go unnoticed.
+* Tweak: Developers can raise the limit of 50 simultaneous OAuth connections with the novamira_oauth_max_clients filter.
+* Fix: OAuth sign-in now works for AI clients that request the discovery documents with the resource path appended or inserted, as current connectors do, and on WordPress installed in a subdirectory, where those requests previously returned a "page not found" error.
+* Minor Fixes
+
 v1.10.0 - 2026/07/21
 * New: Novamira Design. AI agents establish one saved design direction for your site and build every page within it, guarded by anti-slop checks; the new Design page lets you preview, import, edit and activate directions. Companion skills cover the workflow, from the design brief to the finished pages.
 * Minor Fixes

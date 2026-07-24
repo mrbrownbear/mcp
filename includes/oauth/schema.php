@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
 
 const SCHEMA_VERSION_OPTION = 'novamira_oauth_schema_version';
 
-const CURRENT_SCHEMA_VERSION = '1';
+const CURRENT_SCHEMA_VERSION = '2';
 
 function maybe_install(): void
 {
@@ -37,6 +37,7 @@ function maybe_install(): void
         created_at DATETIME NOT NULL,
         last_used_at DATETIME DEFAULT NULL,
         registered_by_ip_hash CHAR(64) NOT NULL,
+        admin_created TINYINT(1) NOT NULL DEFAULT 0,
         PRIMARY KEY (id),
         UNIQUE KEY client_id (client_id)
     ) {$c};");

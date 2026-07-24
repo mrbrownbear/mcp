@@ -26,20 +26,46 @@ function register(): void
     ]);
 }
 
+/**
+ * The troubleshooter's registration self-test authenticates itself with a single-use token
+ * (minted server-side into a short transient right before the probe). A matching request skips
+ * the per-IP limits: every self-test comes from the server's own address, so counting it would
+ * let repeated diagnostics runs saturate that bucket and make the check warn about a rate limit
+ * the diagnostics themselves caused. Unforgeable (random, single-use, 60s TTL) and it grants
+ * nothing else — caps on live connections still apply.
+ */
+function is_self_test_request(WP_REST_Request $req): bool
+{
+    $token = trim((string) $req->get_header('x-novamira-self-test'));
+    if ($token === '') {
+        return false;
+    }
+    $key = 'novamira_oauth_selftest_' . hash('sha256', $token);
+    /** @var mixed $found */
+    $found = get_transient($key);
+    delete_transient($key);
+    return $found === '1' || $found === 1;
+}
+
 // @mago-expect lint:cyclomatic-complexity
 function handle(WP_REST_Request $req): WP_REST_Response|WP_Error
 {
     $client_ip = $_SERVER['REMOTE_ADDR'] ?? '';
     ClientValidation\prune_dead_clients();
-    if ($client_ip !== '' && !ClientValidation\check_and_increment_rate_limit($client_ip)) {
+    $self_test = is_self_test_request($req);
+    if ($client_ip !== '' && !$self_test && !ClientValidation\check_and_increment_rate_limit($client_ip)) {
         return new WP_Error('rate_limited', 'Too many registrations', ['status' => 429]);
     }
-    if ($client_ip !== '' && ClientValidation\client_count_for_ip($client_ip) >= ClientValidation\MAX_CLIENTS_PER_IP) {
+    if (
+        $client_ip !== ''
+        && !$self_test
+        && ClientValidation\client_count_for_ip($client_ip) >= ClientValidation\MAX_CLIENTS_PER_IP
+    ) {
         return new WP_Error('rate_limited', 'Too many registered clients from this address', ['status' => 429]);
     }
     // Cap only live connections, not total rows: active_client_count() ignores pending registrations,
     // which are admin-ungated, so an anonymous DCR flood can no longer exhaust the slots.
-    if (ClientValidation\active_client_count() >= ClientValidation\MAX_CLIENTS_PER_SITE) {
+    if (ClientValidation\active_client_count() >= ClientValidation\max_clients_per_site()) {
         return new WP_Error('cap_reached', 'Client cap reached', ['status' => 503]);
     }
 

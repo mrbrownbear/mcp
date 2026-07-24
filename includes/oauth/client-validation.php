@@ -17,6 +17,19 @@ const DCR_RATE_LIMIT_PER_HOUR = 10;
 
 const MAX_CLIENTS_PER_SITE = 50;
 
+/**
+ * Connection-slot cap actually enforced. MAX_CLIENTS_PER_SITE guards the anonymous registration
+ * endpoint against floods and is generous for real use (a slot is a connection active within the
+ * refresh-token lifetime); sites that legitimately run more simultaneous AI connections can raise
+ * it with the `novamira_oauth_max_clients` filter.
+ */
+function max_clients_per_site(): int
+{
+    // @mago-expect analysis:mixed-assignment
+    $cap = apply_filters('novamira_oauth_max_clients', MAX_CLIENTS_PER_SITE);
+    return is_int($cap) && $cap > 0 ? $cap : MAX_CLIENTS_PER_SITE;
+}
+
 const MAX_CLIENTS_PER_IP = 10;
 
 const STALE_UNUSED_CLIENT_TTL = 86_400;
@@ -246,8 +259,9 @@ function client_count_for_ip(string $client_ip): int
 
 /**
  * Delete clients that no longer hold a live grant so they stop occupying connection slots: pending
- * registrations that never completed a token exchange (older than STALE_UNUSED_CLIENT_TTL), and
- * clients not used within the refresh-token lifetime (their tokens have all expired or been revoked).
+ * registrations that never completed a token exchange (older than STALE_UNUSED_CLIENT_TTL, except
+ * admin-created client IDs, which stay until used or deleted from Connected Apps), and clients not
+ * used within the refresh-token lifetime (their tokens have all expired or been revoked).
  */
 // @mago-expect lint:no-global
 // WordPress core requires global $wpdb for database access.
@@ -260,7 +274,7 @@ function prune_dead_clients(): void
     // @mago-expect analysis:possibly-invalid-argument
     $sql = $wpdb->prepare(
         "DELETE FROM {$wpdb->prefix}novamira_oauth_clients
-         WHERE (last_used_at IS NULL AND created_at < %s)
+         WHERE (last_used_at IS NULL AND created_at < %s AND admin_created = 0)
             OR (last_used_at IS NOT NULL AND last_used_at < %s)",
         $pending_cutoff,
         $used_cutoff,

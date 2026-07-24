@@ -496,9 +496,8 @@ function novamira_render_method_chooser(
                 p.hidden = p.getAttribute('data-panel') !== method;
             });
             var step3 = document.getElementById('novamira-step3');
-            if (step3) {
-                step3.hidden = !(method === 'oauth' || (method === 'password' && hasPassword));
-            }
+            var visible = method === 'oauth' || (method === 'password' && hasPassword);
+            if (step3) { step3.hidden = !visible; }
         }
         document.querySelectorAll('.novamira-method-card').forEach(function (card) {
             card.addEventListener('click', function () { apply(card.getAttribute('data-method')); });
@@ -2699,6 +2698,18 @@ function novamira_render_connect_page(): void
                 $new_password !== null || $existing_password !== null ? '' : ' hidden'
             ; ?>>
                 <?php novamira_render_connect_client_section($new_password, $existing_password, $existing_error); ?>
+            </div>
+
+            <div class="novamira-connect-section">
+                <p class="description" style="margin:0;">
+                    <?php esc_html_e(
+                        'Set up your client above, then use it once. You will see right away if it works.',
+                        domain: 'novamira',
+                    ); ?>
+                    <a href="<?php echo
+                        esc_url(admin_url('admin.php?page=novamira-troubleshoot'))
+                    ; ?>"><?php esc_html_e('Not working? Run diagnostics', domain: 'novamira'); ?></a>
+                </p>
             </div>
         <?php endif; ?>
         <?php if (!$mcp_ready && novamira_get_mcp_passwords() !== []): ?>

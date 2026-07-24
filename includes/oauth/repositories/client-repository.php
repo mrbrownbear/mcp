@@ -43,8 +43,13 @@ final class ClientEntity implements ClientEntityInterface
 final class ClientRepository implements ClientRepositoryInterface
 {
     /** @param list<string> $redirect_uris */
-    public function create(string $client_name, array $redirect_uris, string $registered_by_ip): string
-    {
+    // @mago-expect lint:no-boolean-flag-parameter
+    public function create(
+        string $client_name,
+        array $redirect_uris,
+        string $registered_by_ip,
+        bool $admin_created = false,
+    ): string {
         // @mago-expect lint:no-global
         global $wpdb;
         /** @var \wpdb $wpdb */
@@ -58,6 +63,7 @@ final class ClientRepository implements ClientRepositoryInterface
             'created_at' => gmdate('Y-m-d H:i:s'),
             'last_used_at' => null,
             'registered_by_ip_hash' => hash('sha256', $registered_by_ip),
+            'admin_created' => $admin_created ? 1 : 0,
         ]);
         return $client_id;
     }
@@ -137,6 +143,41 @@ final class ClientRepository implements ClientRepositoryInterface
         $rows = $wpdb->get_results($wpdb->prepare("SELECT client_id, client_name, created_at, last_used_at
                  FROM {$wpdb->prefix}novamira_oauth_clients
                  ORDER BY created_at DESC LIMIT %d", $limit), ARRAY_A);
+        // @mago-expect analysis:invalid-return-statement
+        return $rows === null ? [] : $rows;
+    }
+
+    /**
+     * Most recent admin-created client for this client_name, so regenerating from the
+     * troubleshooter reuses the row instead of stacking new ones.
+     */
+    public function find_admin_client_id(string $client_name): ?string
+    {
+        // @mago-expect lint:no-global
+        global $wpdb;
+        /** @var \wpdb $wpdb */
+        // @mago-expect analysis:possibly-invalid-argument
+        // @mago-expect analysis:mixed-argument
+        // @mago-expect analysis:possibly-invalid-argument
+        $id = $wpdb->get_var($wpdb->prepare("SELECT client_id FROM {$wpdb->prefix}novamira_oauth_clients
+                 WHERE admin_created = 1 AND client_name = %s
+                 ORDER BY created_at DESC LIMIT 1", $client_name));
+        return is_string($id) && $id !== '' ? $id : null;
+    }
+
+    /**
+     * @return list<array{client_id: string, client_name: string, created_at: string, last_used_at: string|null}>
+     */
+    public function list_admin_clients(): array
+    {
+        // @mago-expect lint:no-global
+        global $wpdb;
+        /** @var \wpdb $wpdb */
+        // @mago-expect analysis:non-existent-constant
+        $rows = $wpdb->get_results("SELECT client_id, client_name, created_at, last_used_at
+                 FROM {$wpdb->prefix}novamira_oauth_clients
+                 WHERE admin_created = 1
+                 ORDER BY created_at DESC", ARRAY_A);
         // @mago-expect analysis:invalid-return-statement
         return $rows === null ? [] : $rows;
     }

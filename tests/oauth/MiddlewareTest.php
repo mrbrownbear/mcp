@@ -35,6 +35,11 @@ if (!class_exists('WP_REST_Request')) {
     }
 }
 
+if (!defined('ABSPATH')) {
+    define('ABSPATH', '/');
+}
+
+require_once __DIR__ . '/../../includes/oauth/endpoints/discovery.php';
 require_once __DIR__ . '/../../includes/oauth/middleware.php';
 
 final class MiddlewareTest extends TestCase
@@ -47,6 +52,27 @@ final class MiddlewareTest extends TestCase
             $_SERVER['HTTP_AUTHORIZATION'],
             $_SERVER['REDIRECT_HTTP_AUTHORIZATION'],
             $GLOBALS['novamira_test_current_user_can_manage'],
+            $GLOBALS['novamira_test_home'],
+        );
+    }
+
+    public function testWwwAuthenticateHeaderAdvertisesTheRootMetadataUrl(): void
+    {
+        $GLOBALS['novamira_test_home'] = 'https://example.test';
+        self::assertSame(
+            'Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resource", scope="mcp"',
+            \Novamira\OAuth\Middleware\www_authenticate_header(),
+        );
+    }
+
+    public function testWwwAuthenticateHeaderCarriesTheSubdirectoryPath(): void
+    {
+        // The centralized URL must stay byte-for-byte what the site advertises: on a subdirectory
+        // install the challenge points at /subsite/.well-known/..., which this install serves.
+        $GLOBALS['novamira_test_home'] = 'https://example.com/subsite';
+        self::assertSame(
+            'Bearer resource_metadata="https://example.com/subsite/.well-known/oauth-protected-resource", scope="mcp"',
+            \Novamira\OAuth\Middleware\www_authenticate_header(),
         );
     }
 

@@ -256,6 +256,7 @@ require_once __DIR__ . '/includes/admin-access-link.php';
 require_once __DIR__ . '/includes/skills/bootstrap.php';
 require_once __DIR__ . '/includes/design/bootstrap.php';
 require_once __DIR__ . '/includes/oauth/bootstrap.php';
+require_once __DIR__ . '/includes/troubleshoot/bootstrap.php';
 require_once __DIR__ . '/includes/instructions-admin.php';
 
 \Novamira\Context\boot_context_admin();
@@ -581,8 +582,16 @@ add_action(
             menu_slug: 'novamira-connect',
             callback: 'novamira_render_connect_page',
         );
+    },
+    priority: 10,
+);
 
-        // Abilities Hub sub-page.
+// Abilities Hub — priority 25 places it after Troubleshoot (20) rather than in the priority-10
+// Configuration group, so the connection diagnostics sit directly below Connect. (30 is taken by
+// Context, so 25 keeps it between Troubleshoot and Context without renumbering the rest.)
+add_action(
+    'admin_menu',
+    static function () {
         add_submenu_page(
             parent_slug: 'novamira-connect',
             page_title: __('Abilities Hub', domain: 'novamira'),
@@ -592,7 +601,7 @@ add_action(
             callback: 'novamira_render_settings_page',
         );
     },
-    priority: 10,
+    priority: 25,
 );
 
 // Sandbox sub-page — priority 50 places it after Context (30) and Skills (40).
