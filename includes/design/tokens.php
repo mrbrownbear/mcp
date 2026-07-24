@@ -313,9 +313,7 @@ function prose_typography(string $raw): array
         $sized[$role] = ['fontSize' => $size, 'fontWeight' => weight_from_text($rest)];
     }
 
-    if ($body_family === '') {
-        $body_family = $heading_family;
-    }
+    [$heading_family, $body_family] = resolve_prose_families($raw, $heading_family, $body_family);
     $out = [];
     foreach ($sized as $role => $props) {
         $is_heading = preg_match('/^(display|h[1-6]|headline|title|heading|hero|kicker)/', $role) === 1;
@@ -330,7 +328,143 @@ function prose_typography(string $raw): array
         $row['fontSize'] = $props['fontSize'];
         $out[$role] = $row;
     }
+    return with_bare_font_roles($out, $heading_family, $body_family);
+}
+
+/**
+ * Resolve the heading/body families for a prose import: keep what the bullets
+ * found, otherwise fall back to explicit declarations, then let each role stand
+ * in for the other so a single declared family still yields an activatable pair.
+ *
+ * @return array{0: string, 1: string}
+ */
+function resolve_prose_families(string $raw, string $heading_family, string $body_family): array
+{
+    $explicit = explicit_font_families($raw);
+    if ($heading_family === '') {
+        $heading_family = $explicit['heading'];
+    }
+    if ($body_family === '') {
+        $body_family = $explicit['body'];
+    }
+    if ($body_family === '') {
+        $body_family = $heading_family;
+    }
+    if ($heading_family === '') {
+        $heading_family = $body_family;
+    }
+    return [$heading_family, $body_family];
+}
+
+/**
+ * Add bare heading/body roles carrying the resolved families when no sized
+ * bullet already declared them, so a typography section that only names the
+ * fonts still surfaces the pair (and the design stays activatable).
+ *
+ * @param array<string, array<string, string>> $out
+ * @return array<string, array<string, string>>
+ */
+function with_bare_font_roles(array $out, string $heading_family, string $body_family): array
+{
+    if ($heading_family !== '' && !array_key_exists('heading', $out)) {
+        $out['heading'] = ['fontFamily' => $heading_family];
+    }
+    if ($body_family !== '' && !array_key_exists('body', $out)) {
+        $out['body'] = ['fontFamily' => $body_family];
+    }
     return $out;
+}
+
+/**
+ * Heading/body font families declared outside the `- **Role**: 72rpx …` bullet
+ * form, scanned across the whole document: CSS custom properties such as
+ * `--font-family-heading: "Manrope", …` (and `--heading-font`, `--font-body`,
+ * …) and labelled lines such as `*Heading font:* Manrope`. Other design tools
+ * export these forms; without them the families are missed and the design saves
+ * without an activatable typography pair. CSS properties win over labels.
+ *
+ * @return array{heading: string, body: string}
+ */
+function explicit_font_families(string $raw): array
+{
+    $vars = css_var_font_families($raw);
+    $labels = label_font_families($raw);
+    return [
+        'heading' => css_value($vars['heading'] !== '' ? $vars['heading'] : $labels['heading']),
+        'body' => css_value($vars['body'] !== '' ? $vars['body'] : $labels['body']),
+    ];
+}
+
+/**
+ * Heading/body families read from CSS custom properties anywhere in the
+ * document: `--font-family-heading`, `--heading-font`, `--font-body`, … . First
+ * match per role wins.
+ *
+ * @return array{heading: string, body: string}
+ */
+function css_var_font_families(string $raw): array
+{
+    $heading = '';
+    $body = '';
+    $vars = [];
+    if (preg_match_all('/--([a-z0-9-]+)\s*:\s*([^;\n{}]+)/i', $raw, $vars, PREG_SET_ORDER) === false) {
+        return ['heading' => '', 'body' => ''];
+    }
+    foreach ($vars as $match) {
+        $name = strtolower($match[1]);
+        $value = trim($match[2]);
+        if ($value === '') {
+            continue;
+        }
+        if (
+            $heading === ''
+            && preg_match(
+                '/(heading|display|headline|title)-?font|font-?(family-)?(heading|display|headline|title)/',
+                $name,
+            ) === 1
+        ) {
+            $heading = $value;
+            continue;
+        }
+        if ($body === '' && preg_match('/(body|text)-?font|font-?(family-)?(body|text)/', $name) === 1) {
+            $body = $value;
+        }
+    }
+    return ['heading' => $heading, 'body' => $body];
+}
+
+/**
+ * Heading/body families read from labelled lines such as `*Heading font:*
+ * Manrope` or `Body font: Inter`, with markdown emphasis stripped. First match
+ * per role wins.
+ *
+ * @return array{heading: string, body: string}
+ */
+function label_font_families(string $raw): array
+{
+    $heading = '';
+    $body = '';
+    $labels = [];
+    foreach (explode(separator: "\n", string: $raw) as $line) {
+        $clean = trim(str_replace(search: ['*', '_', '`'], replace: '', subject: $line));
+        if (preg_match('/^(heading|display|body|text)\s+font\s*:\s*(.+)$/i', $clean, $labels) !== 1) {
+            continue;
+        }
+        $role = strtolower($labels[1]);
+        $value = trim($labels[2]);
+        if ($value === '') {
+            continue;
+        }
+        if ($heading === '' && ($role === 'heading' || $role === 'display')) {
+            $heading = $value;
+            continue;
+        }
+        if ($body === '' && ($role === 'body' || $role === 'text')) {
+            $body = $value;
+        }
+    }
+
+    return ['heading' => $heading, 'body' => $body];
 }
 
 /**
