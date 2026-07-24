@@ -1,4 +1,5 @@
 Unreleased
+* New: The one-click .mcpb bundle download for Claude Desktop is available again; it requires Claude Desktop 1.24012.1 or later.
 * New: A Troubleshoot page runs on-demand checks on your site's AI connection and points at what to fix, including whether a CDN, firewall, or security plugin in front of the site is filtering AI clients. It produces a copyable report.
 * New: A dashboard notice warns administrators when a change on the site stops a previously working AI connection from authenticating, so a connection that suddenly breaks does not go unnoticed.
 * Tweak: Developers can raise the limit of 50 simultaneous OAuth connections with the novamira_oauth_max_clients filter.

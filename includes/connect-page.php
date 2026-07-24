@@ -1725,33 +1725,54 @@ function novamira_render_prompt_password_notice(): void
     <?php }
 
 /**
- * Render the disabled ".mcpb bundle" option (shown only for the Claude Desktop
- * tab via JS).
+ * Render the "download .mcpb bundle" option (shown only for the Claude Desktop
+ * tab via JS). Hidden when no real password is available, since the bundle must
+ * embed the plaintext password. Warns the user that the file carries it.
  */
-function novamira_render_mcpb_download(): void
-{ ?>
+function novamira_render_mcpb_download(string $display_password, string $mcp_name): void
+{
+    // Without the zip extension the download handler can't build the bundle, so
+    // omit the option entirely rather than send the user to an error page.
+    if (!class_exists('ZipArchive')) {
+        return;
+    }
+    $confirm_msg = wp_json_encode(__(
+        'This bundle contains your password. The .mcpb file embeds your application password in plaintext so it installs without prompts. Anyone who gets the file can control this site — don\'t share it, and delete it after installing.',
+        domain: 'novamira',
+    ));
+    $confirm_msg = $confirm_msg !== false ? $confirm_msg : '""';
+    ?>
     <div id="novamira-mcpb-download" style="display:none; margin-top:20px; margin-bottom:4px;">
-        <button
-            type="button"
-            class="button button-secondary"
-            style="display:inline-flex; flex-direction:column; align-items:flex-start; width:auto; padding:12px 24px; height:auto; gap:3px;"
-            disabled
-            aria-disabled="true"
-        ><span style="font-size:15px; line-height:1.2;"><?php esc_html_e(
-            'Download .mcpb bundle',
-            domain: 'novamira',
-        ); ?></span><span style="font-size:12px; font-weight:400; opacity:0.88; line-height:1.2;"><?php esc_html_e(
-            'Currently not working with newer Claude Desktop versions',
-            domain: 'novamira',
-        ); ?></span></button>
-        <p class="description" style="margin:8px 0 0;">
-            <?php esc_html_e(
-                'Use the configuration below instead, or go back to step 2 and choose OAuth, which does not use a bundle.',
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
+            <input type="hidden" name="action" value="novamira_download_mcpb">
+            <?php wp_nonce_field('novamira_download_mcpb'); ?>
+            <input type="hidden" name="novamira_mcpb_password" value="<?php echo esc_attr($display_password); ?>">
+            <input type="hidden" name="novamira_mcpb_name" id="novamira-mcpb-name" value="<?php echo
+                esc_attr($mcp_name)
+            ; ?>">
+            <button
+                type="submit"
+                class="button button-primary"
+                style="display:inline-flex; flex-direction:column; align-items:flex-start; width:auto; padding:12px 24px; height:auto; gap:3px;"
+                onclick="return confirm(<?php echo esc_attr($confirm_msg); ?>)"
+            ><span style="font-size:15px; line-height:1.2;"><?php esc_html_e(
+                'Download .mcpb bundle',
                 domain: 'novamira',
-            ); ?>
+            ); ?></span><span style="font-size:12px; font-weight:400; opacity:0.88; line-height:1.2;"><?php esc_html_e(
+                'Requires Claude Desktop 1.24012.1 or later',
+                domain: 'novamira',
+            ); ?></span></button>
+        </form>
+        <p style="margin:8px 0 4px;">
+            <button
+                type="button"
+                class="button-link"
+                onclick="novamiraShowPromptForDesktop(this)"
+            ><?php esc_html_e('Use the prompt for Claude Desktop instead', domain: 'novamira'); ?></button>
         </p>
     </div>
-    <?php }
+    <?php
+}
 
 /** Render the JSON config block. */
 function novamira_render_json_config_block(): void
@@ -1845,7 +1866,9 @@ function novamira_render_config_section(string $rest_url, string $username, stri
 
     <?php novamira_render_local_https_notice(); ?>
 
-    <?php novamira_render_mcpb_download(); ?>
+    <?php if (!$password_is_placeholder) {
+        novamira_render_mcpb_download($display_password, $default_name);
+    } ?>
 
     <?php novamira_render_prompt_password_notice(); ?>
 
@@ -2123,8 +2146,19 @@ function novamira_render_config_section(string $rest_url, string $username, stri
 
         window.novamiraUpdateName = function (value) {
             mcpName = value.trim() || defaultName;
+            var nameField = document.getElementById('novamira-mcpb-name');
+            if (nameField) { nameField.value = mcpName; }
             updateNameWarning(value);
             render();
+        };
+
+        window.novamiraShowPromptForDesktop = function (btn) {
+            var mcpbEl = document.getElementById('novamira-mcpb-download');
+            if (mcpbEl) { mcpbEl.style.display = 'none'; }
+            var pasteBlock = document.getElementById('novamira-paste-block');
+            if (pasteBlock) { pasteBlock.style.display = ''; }
+            var pwNotice = document.getElementById('novamira-prompt-password-notice');
+            if (pwNotice) { pwNotice.style.display = ''; }
         };
 
         window.novamiraToggleServerName = function (btn) {
