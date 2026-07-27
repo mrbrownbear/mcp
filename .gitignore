@@ -19,6 +19,7 @@ node_modules/
 
 # Codex 
 .codex
+.codex-tmp
 
 # Internal docs
 /docs/
