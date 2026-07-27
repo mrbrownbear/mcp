@@ -11,6 +11,11 @@ if (!defined('ABSPATH')) {
     exit();
 }
 
+// Loaded outside boot() on purpose: the transport and abilities gates below decide whether the
+// OAuth *endpoints* exist, not whether its read-only helpers are callable. Diagnostics ask how
+// many connections are active precisely when the gates are closed, and must not fatal doing so.
+require_once __DIR__ . '/client-validation.php';
+
 /**
  * Canonical identifier of the OAuth-protected MCP resource: the audience minted into every access
  * token (RFC 8707) and validated by the middleware. Derived in one place so the signer and the
@@ -97,7 +102,6 @@ function boot(): void
     require_once __DIR__ . '/endpoints/discovery.php';
     Endpoints\Discovery\register();
 
-    require_once __DIR__ . '/client-validation.php';
     require_once __DIR__ . '/repositories/client-repository.php';
     require_once __DIR__ . '/repositories/access-token-repository.php';
     require_once __DIR__ . '/repositories/auth-code-repository.php';
