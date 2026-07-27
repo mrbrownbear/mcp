@@ -136,7 +136,7 @@ final class CompatibilityStartupTest extends TestCase
         );
         self::assertSame(
             [
-                'plugin_version' => '1.10.1',
+                'plugin_version' => '1.11.0',
                 'rest_api_version' => 1,
                 'wordpress_version' => '6.9.2',
                 'minimum_wordpress_version' => '6.9',
