@@ -173,6 +173,18 @@ if (!class_exists('WP_REST_Response')) {
         }
     }
 }
+if (!function_exists('rest_convert_error_to_response')) {
+    function rest_convert_error_to_response(WP_Error $error): WP_REST_Response
+    {
+        $data = $error->get_error_data();
+
+        return new WP_REST_Response([
+            'code' => $error->get_error_code(),
+            'message' => $error->get_error_message(),
+            'data' => $data,
+        ], isset($data['status']) ? (int) $data['status'] : 500);
+    }
+}
 
 if (!defined('ABSPATH')) {
     define('ABSPATH', '/');
@@ -254,7 +266,11 @@ final class MiddlewareTest extends TestCase
             ['rest_request_before_callbacks', 'Novamira\\OAuth\\Middleware\\authorize_routed_request', 5, 3],
             $GLOBALS['novamira_test_filters'],
         );
-        self::assertCount(3, $GLOBALS['novamira_test_filters']);
+        self::assertContains(
+            ['rest_request_after_callbacks', 'Novamira\\OAuth\\Middleware\\attach_www_authenticate_challenge', 5, 3],
+            $GLOBALS['novamira_test_filters'],
+        );
+        self::assertCount(4, $GLOBALS['novamira_test_filters']);
     }
 
     public function testMcpRouteMatchesOnlyTheOauthServer(): void
@@ -500,13 +516,77 @@ final class MiddlewareTest extends TestCase
         );
         self::assertSame('mcp', \Novamira\OAuth\Middleware\route_required_scope('/mcp/novamira-oauth', 'POST'));
 
-        $response = \Novamira\OAuth\Middleware\challenge_unauthenticated(
-            null,
-            null,
+        $response = $this->dispatchAgainstDenyingPermissionCallback(
             new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/write-file/run'),
         );
         self::assertInstanceOf(WP_REST_Response::class, $response);
         self::assertStringContainsString('scope="abilities"', $response->headers['WWW-Authenticate']);
+    }
+
+    public function testUnauthenticatedChallengeSurvivesTheRoutePermissionCallback(): void
+    {
+        // A WP_REST_Response returned before callbacks does not short-circuit the route's own
+        // permission callback, so core would deny again and drop the challenge with the response.
+        $denial = \Novamira\OAuth\Middleware\challenge_unauthenticated(
+            null,
+            null,
+            new WP_REST_Request('POST', '/mcp/novamira-oauth'),
+        );
+        self::assertInstanceOf(WP_Error::class, $denial);
+        self::assertSame('rest_oauth_required', $denial->get_error_code());
+        self::assertSame(401, $denial->get_error_data()['status']);
+
+        $response = $this->dispatchAgainstDenyingPermissionCallback(new WP_REST_Request('POST', '/mcp/novamira-oauth'));
+        self::assertInstanceOf(WP_REST_Response::class, $response);
+        self::assertSame(401, $response->status);
+        self::assertSame('rest_oauth_required', $response->data['code']);
+        // RFC 6750 §3.1: a request that carried no credentials gets no `error` parameter.
+        self::assertSame(
+            'Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resource", scope="mcp"',
+            $response->headers['WWW-Authenticate'],
+        );
+    }
+
+    public function testRoutedScopeDenialsCarryTheirChallengeOnTheResponseObject(): void
+    {
+        $this->authenticateOauthUser(['mcp']);
+        $forbidden = $this->dispatchAgainstDenyingPermissionCallback(
+            new WP_REST_Request('GET', '/wp-abilities/v1/abilities'),
+        );
+        self::assertInstanceOf(WP_REST_Response::class, $forbidden);
+        self::assertSame(403, $forbidden->status);
+        self::assertStringContainsString('error="insufficient_scope"', $forbidden->headers['WWW-Authenticate']);
+
+        $this->authenticateOauthUser(['abilities:read']);
+        $insufficient = $this->dispatchAgainstDenyingPermissionCallback(
+            new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/write-file/run'),
+        );
+        self::assertInstanceOf(WP_REST_Response::class, $insufficient);
+        self::assertSame('rest_oauth_error', $insufficient->data['code']);
+        self::assertStringContainsString('error="insufficient_scope"', $insufficient->headers['WWW-Authenticate']);
+        self::assertStringContainsString('scope="abilities"', $insufficient->headers['WWW-Authenticate']);
+    }
+
+    public function testChallengeAttachmentLeavesUnrelatedResultsUntouched(): void
+    {
+        $request = new WP_REST_Request('POST', '/mcp/novamira-oauth');
+
+        $success = new WP_REST_Response(['ok' => true]);
+        self::assertSame(
+            $success,
+            \Novamira\OAuth\Middleware\attach_www_authenticate_challenge($success, null, $request),
+        );
+
+        // Another plugin's denial, and Novamira's own pre-dispatch 401, must not be relabelled here.
+        foreach ([
+            new WP_Error('rest_forbidden', 'Sorry, you are not allowed to do that.', ['status' => 401]),
+            new WP_Error('rest_oauth_error', 'Invalid OAuth token subject.', ['status' => 401]),
+        ] as $error) {
+            self::assertSame(
+                $error,
+                \Novamira\OAuth\Middleware\attach_www_authenticate_challenge($error, null, $request),
+            );
+        }
     }
 
     public function testLegacyMcpGrantRemainsIsolatedToItsExistingEndpoint(): void
@@ -555,6 +635,21 @@ final class MiddlewareTest extends TestCase
         self::assertStringContainsString('resource_metadata=', $challenge);
         self::assertStringContainsString('error="invalid_token"', $challenge);
         self::assertStringContainsString('scope="mcp"', $challenge);
+    }
+
+    /**
+     * Mirror WP_REST_Server::respond_to_request() for a route whose permission callback denies:
+     * only a WP_Error short-circuits it, the generic rest_forbidden replaces anything else, and the
+     * after-callbacks filter runs either way.
+     */
+    private function dispatchAgainstDenyingPermissionCallback(WP_REST_Request $request): mixed
+    {
+        $response = \Novamira\OAuth\Middleware\authorize_routed_request(null, null, $request);
+        if (!$response instanceof WP_Error) {
+            $response = new WP_Error('rest_forbidden', 'Sorry, you are not allowed to do that.', ['status' => 401]);
+        }
+
+        return \Novamira\OAuth\Middleware\attach_www_authenticate_challenge($response, null, $request);
     }
 
     /** @param list<string> $scopes */

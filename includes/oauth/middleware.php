@@ -13,7 +13,6 @@ use Novamira\OAuth\Bridge;
 use Novamira\OAuth\ServerFactory;
 use WP_Error;
 use WP_REST_Request;
-use WP_REST_Response;
 
 if (!defined('ABSPATH') && PHP_SAPI !== 'cli') {
     exit();
@@ -31,6 +30,15 @@ function register(): void
     add_filter(
         'rest_request_before_callbacks',
         __NAMESPACE__ . '\\authorize_routed_request',
+        priority: 5,
+        accepted_args: 3,
+    );
+
+    // Denials above are WP_Error, the only value core lets short-circuit a route's permission callback.
+    // Their WWW-Authenticate challenge is attached here, once the error has survived to the response.
+    add_filter(
+        'rest_request_after_callbacks',
+        __NAMESPACE__ . '\\attach_www_authenticate_challenge',
         priority: 5,
         accepted_args: 3,
     );
@@ -158,7 +166,6 @@ function authorize_routed_request(mixed $result, mixed $handler, WP_REST_Request
     }
 
     if (!oauth_identity_may_use_route($route, $method)) {
-        send_www_authenticate('insufficient_scope');
         return new WP_Error(
             'rest_oauth_route_forbidden',
             'This OAuth credential is not accepted on the requested REST route.',
@@ -167,13 +174,10 @@ function authorize_routed_request(mixed $result, mixed $handler, WP_REST_Request
     }
 
     if (!scopes_authorize_routed_request($identity['scopes'], $route, $method)) {
-        $required_scope = route_required_scope($route, $method);
-        send_www_authenticate('insufficient_scope', $required_scope ?? 'abilities');
         return new WP_Error('rest_oauth_error', 'Token does not grant access to this REST route.', ['status' => 403]);
     }
 
     if (!current_user_can_access_mcp()) {
-        send_www_authenticate('insufficient_scope', route_required_scope($route, $method) ?? 'abilities');
         return new WP_Error('rest_oauth_error', 'User is no longer allowed to manage Novamira.', [
             'status' => 403,
         ]);
@@ -183,23 +187,85 @@ function authorize_routed_request(mixed $result, mixed $handler, WP_REST_Request
     return $result;
 }
 
+/**
+ * Deny a credential-less request to an OAuth-protected route.
+ *
+ * The return must be a WP_Error: core only lets a WP_Error short-circuit the route's own
+ * permission_callback. A WP_REST_Response is passed over, the route's callback still denies, and the
+ * generic rest_forbidden error replaces it — challenge header included.
+ */
 function challenge_unauthenticated(mixed $result, mixed $handler, WP_REST_Request $request): mixed
 {
     if ($result !== null || get_current_user_id() > 0 || has_bearer_scheme(get_authorization_header())) {
         return $result;
     }
 
-    $required_scope = route_required_scope($request->get_route(), strtoupper($request->get_method()));
-    if ($required_scope === null) {
+    if (route_required_scope($request->get_route(), strtoupper($request->get_method())) === null) {
         return $result;
     }
 
-    $response = new WP_REST_Response([
-        'code' => 'rest_oauth_required',
-        'message' => 'OAuth authentication required.',
-    ], 401);
-    $response->header('WWW-Authenticate', www_authenticate_header(scope: $required_scope));
-    return $response;
+    return new WP_Error('rest_oauth_required', 'OAuth authentication required.', ['status' => 401]);
+}
+
+/**
+ * Carry the challenge on the response object rather than emitting it as a raw header.
+ *
+ * Routed denials are decided during dispatch, which also runs for internal calls (rest_do_request(),
+ * REST batch subrequests). A header() there would alter the enclosing HTTP response while the
+ * WP_REST_Response actually handed back to the caller carried no challenge at all. Core applies this
+ * filter even when $response is already a WP_Error, and converts errors only afterwards, so performing
+ * the conversion here is what lets the header survive.
+ */
+function attach_www_authenticate_challenge(mixed $response, mixed $handler, WP_REST_Request $request): mixed
+{
+    if (!$response instanceof WP_Error) {
+        return $response;
+    }
+
+    $challenge = routed_challenge($response, $request);
+    if ($challenge === null) {
+        return $response;
+    }
+
+    $converted = rest_convert_error_to_response($response);
+    $converted->header('WWW-Authenticate', $challenge);
+
+    return $converted;
+}
+
+/**
+ * The RFC 6750 challenge a routed OAuth denial should advertise, or null when the error is not one.
+ */
+function routed_challenge(WP_Error $error, WP_REST_Request $request): ?string
+{
+    $code = $error->get_error_code();
+    $required_scope = route_required_scope($request->get_route(), strtoupper($request->get_method()));
+
+    if ($code === 'rest_oauth_required') {
+        // RFC 6750 §3.1: no `error` parameter when the request carried no credentials at all.
+        return $required_scope === null ? null : www_authenticate_header(scope: $required_scope);
+    }
+    if ($code === 'rest_oauth_route_forbidden') {
+        // The route lies outside OAuth's boundary, so it has no route-specific scope to name.
+        return www_authenticate_header('insufficient_scope');
+    }
+    // rest_oauth_error also carries pre-dispatch authentication failures, which never reach this
+    // filter; the 403 status is what identifies the routed scope denials among them.
+    if ($code === 'rest_oauth_error' && error_status($error) === 403) {
+        return www_authenticate_header('insufficient_scope', $required_scope ?? 'abilities');
+    }
+
+    return null;
+}
+
+function error_status(WP_Error $error): ?int
+{
+    // @mago-expect analysis:mixed-assignment
+    $data = $error->get_error_data();
+    // @mago-expect analysis:mixed-assignment
+    $status = is_array($data) ? $data['status'] ?? null : null;
+
+    return is_numeric($status) ? (int) $status : null;
 }
 
 /**
@@ -214,10 +280,16 @@ function www_authenticate_header(?string $error = null, string $scope = 'mcp'): 
     return $value . ', scope="' . $scope . '"';
 }
 
-function send_www_authenticate(string $error, string $scope = 'mcp'): void
+/**
+ * Emit the challenge for a rejected Bearer credential.
+ *
+ * rest_authentication_errors runs in serve_request() before dispatch, so this is a real HTTP response
+ * being answered — never an internal dispatch — and no response object exists yet to carry the header.
+ */
+function send_www_authenticate(string $error): void
 {
     if (!headers_sent()) {
-        header('WWW-Authenticate: ' . www_authenticate_header($error, $scope));
+        header('WWW-Authenticate: ' . www_authenticate_header($error));
     }
 }
 
