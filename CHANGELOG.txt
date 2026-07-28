@@ -1,5 +1,7 @@
+v1.11.0 - 2026/07/28
 * New: Introduced REST API endpoints for the Novamira CLI. More information: novamira.ai/cli.
 * Fix: Running PHP through an AI agent no longer logs a PHP warning on every call, which on some server setups flooded the error log and made large operations return a gateway error even though the change had already been saved.
+* Minor Fixes
 
 v1.10.1 - 2026/07/24
 * New: The one-click .mcpb bundle download for Claude Desktop is available again; it requires Claude Desktop 1.24012.1 or later.
