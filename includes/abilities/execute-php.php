@@ -36,7 +36,10 @@ wp_register_ability('novamira/execute-php', [
         'type' => 'object',
         'properties' => [
             'success' => ['type' => 'boolean', 'description' => 'Whether the code executed without throwing.'],
-            'return_value' => ['description' => 'The value returned by the evaluated code.'],
+            'return_value' => [
+                'type' => ['string', 'integer', 'number', 'boolean', 'array', 'object', 'null'],
+                'description' => 'The value returned by the evaluated code.',
+            ],
             'output' => ['type' => 'string', 'description' => 'Any output captured via echo/print.'],
             'errors' => [
                 'type' => 'array',

@@ -1,3 +1,5 @@
+* Fix: Running PHP through an AI agent no longer logs a PHP warning on every call, which on some server setups flooded the error log and made large operations return a gateway error even though the change had already been saved.
+
 v1.10.1 - 2026/07/24
 * New: The one-click .mcpb bundle download for Claude Desktop is available again; it requires Claude Desktop 1.24012.1 or later.
 * New: A Troubleshoot page runs on-demand checks on your site's AI connection and points at what to fix, including whether a CDN, firewall, or security plugin in front of the site is filtering AI clients. It produces a copyable report.
