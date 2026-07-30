@@ -41,22 +41,21 @@ function resource_request_allowed(string $requested, string $expected): bool
 }
 
 /**
- * Scopes accepted by the authorization and token servers. `read` and `write` remain accepted only
- * as compatibility aliases for legacy MCP authorization requests; they are never advertised or
- * persisted as Ability grants.
+ * Scopes accepted by the authorization and token servers. `mcp` is the only scope issued.
+ * The other values remain accepted as migration aliases for clients authenticated before
+ * Novamira switched to one full-access grant.
  *
  * @return list<string>
  */
 function supported_scopes(): array
 {
-    return ['abilities:read', 'abilities', 'mcp', 'read', 'write'];
+    return ['mcp', 'read', 'write', 'abilities:read', 'abilities'];
 }
 
 /**
  * Validate and normalize the scope string captured before consent.
  *
- * Ability and legacy grants cannot be mixed. Legacy aliases retain their historical all-MCP
- * behavior, while Ability grants preserve exactly what the user is asked to approve.
+ * Every recognized request maps to the one full-access `mcp` grant.
  */
 function normalize_authorization_scope(string $requested): ?string
 {
@@ -73,11 +72,6 @@ function normalize_authorization_scope(string $requested): ?string
         if (!in_array($scope, supported_scopes(), strict: true)) {
             return null;
         }
-    }
-
-    $ability_scopes = array_values(array_intersect($parts, ['abilities:read', 'abilities']));
-    if ($ability_scopes !== []) {
-        return count($ability_scopes) === count($parts) ? implode(' ', $ability_scopes) : null;
     }
 
     return 'mcp';

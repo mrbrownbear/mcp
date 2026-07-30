@@ -98,11 +98,9 @@ function handle(): void
 
     $scope = \Novamira\OAuth\normalize_authorization_scope(get_param('scope'));
     if ($scope === null) {
-        wp_die(
-            esc_html__('The requested OAuth scope is invalid or mixes legacy and Ability access.', domain: 'novamira'),
-            title: '',
-            args: ['response' => 400],
-        );
+        wp_die(esc_html__('The requested OAuth scope is invalid.', domain: 'novamira'), title: '', args: [
+            'response' => 400,
+        ]);
         return;
     }
 

@@ -252,7 +252,7 @@ function routed_challenge(WP_Error $error, WP_REST_Request $request): ?string
     // rest_oauth_error also carries pre-dispatch authentication failures, which never reach this
     // filter; the 403 status is what identifies the routed scope denials among them.
     if ($code === 'rest_oauth_error' && error_status($error) === 403) {
-        return www_authenticate_header('insufficient_scope', $required_scope ?? 'abilities');
+        return www_authenticate_header('insufficient_scope', $required_scope ?? 'mcp');
     }
 
     return null;
@@ -323,66 +323,14 @@ function oauth_identity_may_use_route(string $route, string $method): bool
 /** @param list<string> $scopes */
 function scopes_authorize_routed_request(array $scopes, string $route, string $method): bool
 {
-    if (is_mcp_route($route)) {
-        return in_array('mcp', $scopes, strict: true);
-    }
-    if (in_array('abilities', $scopes, strict: true)) {
-        return true;
-    }
-    if (!in_array('abilities:read', $scopes, strict: true)) {
-        return false;
-    }
-
-    return strtoupper($method) !== 'POST' || run_route_ability_is_readonly($route);
+    // `abilities` and `abilities:read` are accepted only for already-issued CLI tokens. There is
+    // no longer a read-only mode: every recognized grant has the same full access as `mcp`.
+    return array_intersect($scopes, ['mcp', 'abilities', 'abilities:read']) !== [];
 }
 
 function route_required_scope(string $route, string $method): ?string
 {
-    if (!oauth_identity_may_use_route($route, $method)) {
-        return null;
-    }
-    if (is_mcp_route($route)) {
-        return 'mcp';
-    }
-    if (strtoupper($method) !== 'POST') {
-        return 'abilities:read';
-    }
-
-    return run_route_ability_is_readonly($route) ? 'abilities:read' : 'abilities';
-}
-
-function run_route_ability_is_readonly(string $route): bool
-{
-    $name = run_route_ability_name($route);
-    if ($name === null || !function_exists('wp_get_ability')) {
-        return false;
-    }
-
-    $ability = wp_get_ability($name);
-    if (!$ability instanceof \WP_Ability || $ability->get_meta_item('show_in_rest', false) !== true) {
-        return false;
-    }
-    // @mago-expect analysis:mixed-assignment
-    $annotations = $ability->get_meta_item('annotations', []);
-
-    return is_array($annotations) && ($annotations['readonly'] ?? null) === true;
-}
-
-function run_route_ability_name(string $route): ?string
-{
-    $prefix = '/novamira/v1/abilities/';
-    $suffix = '/run';
-    if (!str_starts_with($route, $prefix) || !str_ends_with($route, $suffix)) {
-        return null;
-    }
-
-    $encoded = substr($route, strlen($prefix), -strlen($suffix));
-    $segments = array_values(array_filter(explode('/', $encoded), static fn(string $part): bool => $part !== ''));
-    if (count($segments) < 2) {
-        return null;
-    }
-
-    return implode('/', array_map('rawurldecode', $segments));
+    return oauth_identity_may_use_route($route, $method) ? 'mcp' : null;
 }
 
 function get_authorization_header(): string

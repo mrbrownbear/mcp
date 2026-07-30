@@ -35,7 +35,7 @@ require_once __DIR__ . '/../../includes/oauth/endpoints/introspect.php';
 final class AbilityScopeLifecycleTest extends TestCase
 {
     #[DataProvider('authorizationScopeProvider')]
-    public function testAuthorizationScopeValidationPreservesAbilityGrants(
+    public function testAuthorizationScopeValidationMapsEveryRecognizedRequestToFullAccess(
         string $requested,
         ?string $expected,
     ): void {
@@ -46,34 +46,24 @@ final class AbilityScopeLifecycleTest extends TestCase
     public static function authorizationScopeProvider(): iterable
     {
         yield 'default legacy' => ['', 'mcp'];
-        yield 'readonly' => ['abilities:read', 'abilities:read'];
-        yield 'full' => ['abilities', 'abilities'];
-        yield 'full explicitly includes read without rewriting' => [
-            'abilities abilities:read',
-            'abilities abilities:read',
-        ];
+        yield 'old readonly alias' => ['abilities:read', 'mcp'];
+        yield 'old full alias' => ['abilities', 'mcp'];
+        yield 'old ability combination' => ['abilities abilities:read', 'mcp'];
         yield 'mcp' => ['mcp', 'mcp'];
         yield 'legacy aliases' => ['read write', 'mcp'];
         yield 'unknown' => ['admin', null];
-        yield 'legacy and ability cannot mix' => ['mcp abilities', null];
-        yield 'alias and ability cannot mix' => ['read abilities:read', null];
+        yield 'mixed recognized aliases' => ['mcp abilities read', 'mcp'];
     }
 
-    public function testConsentDistinguishesReadonlyFullAndLegacyGrants(): void
+    public function testConsentAlwaysDescribesFullAccess(): void
     {
-        $read = \Novamira\OAuth\Consent\consent_grant_details('abilities:read');
-        self::assertStringContainsString('readonly', strtolower($read['label']));
-        self::assertStringContainsString('readonly=true', $read['description']);
-        self::assertSame([], $read['risks']);
-
-        $full = \Novamira\OAuth\Consent\consent_grant_details('abilities');
-        self::assertStringContainsString('full', strtolower($full['label']));
-        self::assertCount(5, $full['risks']);
-        self::assertStringContainsString('third-party', $full['description']);
-        self::assertStringContainsString('temporary administrator', implode(' ', $full['risks']));
-
-        $legacy = \Novamira\OAuth\Consent\consent_grant_details('mcp');
-        self::assertStringContainsString('legacy MCP', $legacy['label']);
+        foreach (['mcp', 'abilities', 'abilities:read'] as $scope) {
+            $grant = \Novamira\OAuth\Consent\consent_grant_details($scope);
+            self::assertStringContainsString('full', strtolower($grant['label']));
+            self::assertCount(5, $grant['risks']);
+            self::assertStringContainsString('third-party', $grant['description']);
+            self::assertStringContainsString('temporary administrator', implode(' ', $grant['risks']));
+        }
     }
 
     #[DataProvider('grantedScopeProvider')]
@@ -88,11 +78,9 @@ final class AbilityScopeLifecycleTest extends TestCase
     /** @return iterable<string, array{mixed, string}> */
     public static function grantedScopeProvider(): iterable
     {
-        yield 'readonly' => [['abilities:read'], 'abilities:read'];
-        yield 'full' => [['abilities'], 'abilities'];
-        yield 'legacy' => [['mcp'], 'mcp'];
-        yield 'explicit combination' => [['abilities', 'abilities:read'], 'abilities abilities:read'];
-        yield 'string input' => ['abilities:read', 'abilities:read'];
+        yield 'full access' => [['mcp'], 'mcp'];
+        yield 'legacy ability token' => [['abilities'], 'abilities'];
+        yield 'legacy readonly token' => ['abilities:read', 'abilities:read'];
         yield 'invalid input' => [null, ''];
     }
 }

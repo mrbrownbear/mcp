@@ -15,61 +15,41 @@ use PHPUnit\Framework\TestCase;
 final class RestOnlyContractTest extends TestCase
 {
     #[DataProvider('siteProvider')]
-    public function testCompleteReadonlyAndFullRestWorkflow(string $siteUrl, string $forwardingMode): void
+    public function testCompleteFullAccessRestWorkflow(string $siteUrl, string $forwardingMode): void
     {
         $server = $this->server($siteUrl, $forwardingMode);
         $metadata = $this->getMetadata($server, $siteUrl);
         self::assertSame(1, $metadata['novamira']['rest_api_version']);
-        self::assertSame('1.10.0', $metadata['novamira']['plugin_version']);
+        self::assertSame('1.11.0', $metadata['novamira']['plugin_version']);
         self::assertNotContains(false, $metadata['novamira']['features']);
 
-        $readToken = $this->authorize($server, $siteUrl, 'abilities:read');
-        $catalog = $this->listAllAbilities($server, $siteUrl, $readToken, $forwardingMode);
+        $token = $this->authorize($server, $siteUrl, 'mcp');
+        $catalog = $this->listAllAbilities($server, $siteUrl, $token, $forwardingMode);
         self::assertSame(
             ['novamira/agent-context', 'novamira/read-file', 'novamira/skill-get', 'novamira/write-file', 'vendor/extension-action'],
             array_column($catalog, 'name'),
         );
 
-        $item = $this->request($server, 'GET', $siteUrl . '/wp-json/wp-abilities/v1/abilities/novamira/read-file', token: $readToken, forwardingMode: $forwardingMode);
+        $item = $this->request($server, 'GET', $siteUrl . '/wp-json/wp-abilities/v1/abilities/novamira/read-file', token: $token, forwardingMode: $forwardingMode);
         self::assertSame(200, $item['status']);
         self::assertTrue($item['body']['meta']['annotations']['readonly']);
 
-        $context = $this->runAbility($server, $siteUrl, 'novamira/agent-context', null, $readToken, $forwardingMode);
+        $context = $this->runAbility($server, $siteUrl, 'novamira/agent-context', null, $token, $forwardingMode);
         self::assertSame($metadata['novamira'], $context['server']);
 
-        $readonly = $this->runAbility($server, $siteUrl, 'novamira/read-file', ['path' => '/tmp/a'], $readToken, $forwardingMode);
-        self::assertSame('contents', $readonly['content']);
+        $read = $this->runAbility($server, $siteUrl, 'novamira/read-file', ['path' => '/tmp/a'], $token, $forwardingMode);
+        self::assertSame('contents', $read['content']);
 
-        $denied = $this->request(
-            $server,
-            'POST',
-            $siteUrl . '/wp-json/novamira/v1/abilities/novamira/write-file/run',
-            ['input' => ['path' => '/tmp/a', 'content' => 'changed']],
-            $readToken,
-            $forwardingMode,
-        );
-        self::assertSame(403, $denied['status']);
-
-        $fullToken = $this->authorize($server, $siteUrl, 'abilities');
         $mutation = $this->runAbility(
             $server,
             $siteUrl,
             'novamira/write-file',
             ['path' => '/tmp/a', 'content' => 'changed'],
-            $fullToken,
+            $token,
             $forwardingMode,
         );
         self::assertSame(['success' => true, 'bytes_written' => 7], $mutation);
 
-        $extensionDenied = $this->request(
-            $server,
-            'POST',
-            $siteUrl . '/wp-json/novamira/v1/abilities/vendor/extension-action/run',
-            ['input' => ['value' => 'extension']],
-            $readToken,
-            $forwardingMode,
-        );
-        self::assertSame(403, $extensionDenied['status']);
         self::assertSame(
             ['extension' => 'extension'],
             $this->runAbility(
@@ -77,7 +57,7 @@ final class RestOnlyContractTest extends TestCase
                 $siteUrl,
                 'vendor/extension-action',
                 ['value' => 'extension'],
-                $fullToken,
+                $token,
                 $forwardingMode,
             ),
         );
@@ -87,7 +67,7 @@ final class RestOnlyContractTest extends TestCase
             $siteUrl,
             'novamira/skill-get',
             ['slug' => 'theme-maintenance'],
-            $readToken,
+            $token,
             $forwardingMode,
         );
         self::assertTrue($skill['found']);
@@ -100,7 +80,7 @@ final class RestOnlyContractTest extends TestCase
                 $server,
                 'GET',
                 $siteUrl . '/wp-json/wp-abilities/v1/abilities?page=1',
-                token: $fullToken,
+                token: $token,
                 forwardingMode: $forwardingMode,
             )['status'],
         );
@@ -111,7 +91,7 @@ final class RestOnlyContractTest extends TestCase
                 'POST',
                 $siteUrl . '/wp-json/novamira/v1/abilities/novamira/read-file/run',
                 ['input' => ['path' => '/tmp/a']],
-                $fullToken,
+                $token,
                 $forwardingMode,
             )['status'],
         );
@@ -125,7 +105,7 @@ final class RestOnlyContractTest extends TestCase
     {
         $siteUrl = 'https://example.test/blog';
         $server = $this->server($siteUrl, 'direct', omitContext: true);
-        $token = $this->authorize($server, $siteUrl, 'abilities:read');
+        $token = $this->authorize($server, $siteUrl, 'mcp');
 
         try {
             $this->discoverAtomically($server, $siteUrl, $token, 'direct');
@@ -185,7 +165,7 @@ final class RestOnlyContractTest extends TestCase
                         'resource' => $this->siteUrl . '/wp-json/mcp/novamira-oauth',
                         'authorization_servers' => [$this->siteUrl],
                         'bearer_methods_supported' => ['header'],
-                        'scopes_supported' => ['abilities:read', 'abilities', 'mcp'],
+                        'scopes_supported' => ['mcp'],
                         'novamira' => $this->compatibility(),
                     ]);
                 }
@@ -237,7 +217,7 @@ final class RestOnlyContractTest extends TestCase
                     return $this->response(200, ['content' => 'contents']);
                 }
                 if (str_ends_with($path, '/novamira/write-file/run')) {
-                    return $scope !== 'abilities'
+                    return $scope !== 'mcp'
                         ? $this->response(403, ['code' => 'rest_oauth_error'])
                         : $this->response(200, ['success' => true, 'bytes_written' => 7]);
                 }
@@ -249,7 +229,7 @@ final class RestOnlyContractTest extends TestCase
                     ]);
                 }
                 if (str_ends_with($path, '/vendor/extension-action/run')) {
-                    return $scope !== 'abilities'
+                    return $scope !== 'mcp'
                         ? $this->response(403, ['code' => 'rest_oauth_error'])
                         : $this->response(200, ['extension' => $body['input']['value'] ?? null]);
                 }
@@ -261,13 +241,12 @@ final class RestOnlyContractTest extends TestCase
             private function compatibility(): array
             {
                 return [
-                    'plugin_version' => '1.10.0',
+                    'plugin_version' => '1.11.0',
                     'rest_api_version' => 1,
                     'wordpress_version' => '6.9.2',
                     'minimum_wordpress_version' => '6.9',
                     'features' => [
                         'abilities_bearer_auth' => true,
-                        'abilities_read_scope' => true,
                         'agent_context' => true,
                         'rest_skills' => true,
                         'generalized_execution_shim' => true,

@@ -93,9 +93,9 @@ final class BearerAuthenticationTest extends TestCase
     /** @return iterable<string, array{list<string>}> */
     public static function issuedScopeProvider(): iterable
     {
-        yield 'readonly' => [['abilities:read']];
-        yield 'full' => [['abilities']];
-        yield 'legacy' => [['mcp']];
+        yield 'old readonly alias' => [['abilities:read']];
+        yield 'old full alias' => [['abilities']];
+        yield 'full access' => [['mcp']];
     }
 
     #[DataProvider('invalidCredentialProvider')]

@@ -7,19 +7,18 @@ Status: fixed contract for CLI implementers and the Phase 1 REST-only acceptance
 | Component | Supported value |
 | --- | --- |
 | WordPress | 6.9 or newer |
-| Novamira plugin | 1.10.0 or newer within major 1 |
+| Novamira plugin | 1.11.0 or newer within major 1 |
 | REST contract | `rest_api_version: 1` |
 | OAuth audience | normalized `rest_url('mcp/novamira-oauth')` identifier |
 
-A client must fetch `<wordpress-home>/.well-known/oauth-protected-resource` before login and require all five `novamira.features` values to be `true`. The WordPress home may include a subdirectory. Public metadata and authenticated `novamira/agent-context` compatibility data must agree.
+A client must fetch `<wordpress-home>/.well-known/oauth-protected-resource` before login and require all four `novamira.features` values to be `true`. The WordPress home may include a subdirectory. Public metadata and authenticated `novamira/agent-context` compatibility data must agree.
 
 ## OAuth grants
 
-- `abilities:read`: list and describe Abilities, and execute only targets with explicit `annotations.readonly: true`.
-- `abilities`: includes read access and permits otherwise-authorized REST-visible mutations.
-- `mcp`: legacy endpoint only; it never authorizes the REST Ability surface.
+- `mcp`: full access to the MCP protected resource and otherwise-authorized REST-visible Abilities.
+- Former `abilities` and `abilities:read` tokens are full-access upgrade aliases and are not advertised for new authorization.
 
-Authorization Code with PKCE and refresh are the supported CLI grants. Refresh may preserve or narrow the original grant and cannot broaden it.
+Authorization Code with PKCE and refresh are the supported CLI grants. New and refreshed grants converge to `mcp`.
 
 ## HTTP surface
 
@@ -40,6 +39,6 @@ The main Bearer token is never sent to upload, temporary-administrator, chat, br
 
 ## Acceptance coverage
 
-`tests/integration/RestOnlyContractTest.php` drives a standalone HTTP-style client through pre-login compatibility, authorization and token exchange, complete pagination, item lookup, readonly context/read execution, readonly mutation denial, explicit full mutation, and site-skill retrieval. It runs against root and subdirectory homes with direct and CGI-forwarded Authorization headers, scans every request for protocol/JSON-RPC use, and proves a missing context after successful pagination is observable as an atomic compatibility failure.
+`tests/integration/RestOnlyContractTest.php` drives a standalone HTTP-style client through pre-login compatibility, authorization and token exchange, complete pagination, item lookup, context/read execution, mutation, and site-skill retrieval. It runs against root and subdirectory homes with direct and CGI-forwarded Authorization headers, scans every request for protocol/JSON-RPC use, and proves a missing context after successful pagination is observable as an atomic compatibility failure.
 
 Lower-level PHPUnit coverage invokes the production metadata, OAuth, Bearer middleware, scope, shim, skill, and context implementations; the integration harness composes their fixed external contract without depending on the optional MCP adapter.

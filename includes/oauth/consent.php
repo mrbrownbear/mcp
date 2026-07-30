@@ -246,41 +246,19 @@ function render_form(string $token, string $client_name, string $redirect_uri, s
  */
 function consent_grant_details(string $scope): array
 {
-    if (str_contains(' ' . $scope . ' ', ' abilities ')) {
-        return [
-            'label' => __('full Ability access to your WordPress site', domain: 'novamira'),
-            'description' => __(
-                'Full access permits execution of REST-visible abilities registered by Novamira and compatible third-party plugins, including abilities that can execute code, change content or settings, modify files, and create temporary administrator access.',
-                domain: 'novamira',
-            ),
-            'risks' => [
-                __('Execute PHP and WP-CLI.', domain: 'novamira'),
-                __('Read, write, and delete server files.', domain: 'novamira'),
-                __('Change WordPress content and settings.', domain: 'novamira'),
-                __('Create temporary administrator access.', domain: 'novamira'),
-                __('Execute REST-visible abilities registered by compatible plugins.', domain: 'novamira'),
-            ],
-        ];
-    }
-
-    if (str_contains(' ' . $scope . ' ', ' abilities:read ')) {
-        return [
-            'label' => __('readonly Ability access to your WordPress site', domain: 'novamira'),
-            'description' => __(
-                'Readonly access permits Ability discovery and execution only when an Ability explicitly declares readonly=true.',
-                domain: 'novamira',
-            ),
-            'risks' => [],
-        ];
-    }
-
     return [
-        'label' => __('legacy MCP access to your WordPress site', domain: 'novamira'),
+        'label' => __('full access to your WordPress site', domain: 'novamira'),
         'description' => __(
-            'Legacy MCP access can execute Novamira capabilities through its existing MCP endpoint.',
+            'Full access permits execution of Novamira capabilities through MCP and REST, including REST-visible abilities registered by compatible third-party plugins.',
             domain: 'novamira',
         ),
-        'risks' => [],
+        'risks' => [
+            __('Execute PHP and WP-CLI.', domain: 'novamira'),
+            __('Read, write, and delete server files.', domain: 'novamira'),
+            __('Change WordPress content and settings.', domain: 'novamira'),
+            __('Create temporary administrator access.', domain: 'novamira'),
+            __('Execute REST-visible abilities registered by compatible plugins.', domain: 'novamira'),
+        ],
     ];
 }
 

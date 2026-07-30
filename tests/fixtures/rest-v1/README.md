@@ -7,12 +7,11 @@ in [`SERVER_CONTRACT.md`](SERVER_CONTRACT.md).
 The JSON files must remain byte-identical to
 `../../../../novamira-cli/fixtures/v1`.
 
-The first compatible server is WordPress 6.9 with Novamira 1.10.0, REST API
+The first compatible server is WordPress 6.9 with Novamira 1.11.0, REST API
 contract `1`, and all of these feature values strictly `true`:
 
 ```text
 abilities_bearer_auth
-abilities_read_scope
 agent_context
 rest_skills
 generalized_execution_shim
@@ -21,11 +20,11 @@ generalized_execution_shim
 Protected-resource metadata publishes the compatibility block as `novamira`;
 `novamira/agent-context` returns the identical block as `server`.
 
-The v1 OAuth audience remains `rest_url('mcp/novamira-oauth')`. Scope
-`abilities:read` permits Ability list/item access and execution only when the
-resolved Ability explicitly has `readonly: true`. Scope `abilities` includes
-read access and execution of every otherwise-permitted REST-visible Ability.
-`mcp` and its legacy aliases remain isolated to the legacy endpoint.
+The v1 OAuth audience remains `rest_url('mcp/novamira-oauth')`. The single
+advertised `mcp` scope authorizes both the MCP endpoint and every
+otherwise-permitted REST-visible Ability. Former CLI scopes `abilities` and
+`abilities:read` remain accepted as full-access upgrade aliases for
+already-issued tokens.
 
 Full access intentionally includes third-party abilities with
 `meta.show_in_rest: true`; consent must state that compatible third-party

@@ -1,3 +1,6 @@
+Unreleased
+* Fix: OAuth connections no longer ask users to reconnect for additional permissions.
+
 v1.11.0 - 2026/07/28
 * New: Introduced REST API endpoints for the Novamira CLI. More information: novamira.ai/cli.
 * Fix: Running PHP through an AI agent no longer logs a PHP warning on every call, which on some server setups flooded the error log and made large operations return a gateway error even though the change had already been saved.

@@ -31,7 +31,6 @@ use League\OAuth2\Server\Entities\AccessTokenEntityInterface;
 use League\OAuth2\Server\Entities\AuthCodeEntityInterface;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Entities\RefreshTokenEntityInterface;
-use League\OAuth2\Server\Exception\OAuthServerException;
 use League\OAuth2\Server\Grant\AuthCodeGrant;
 use League\OAuth2\Server\Grant\RefreshTokenGrant;
 use League\OAuth2\Server\Repositories\AccessTokenRepositoryInterface;
@@ -59,32 +58,23 @@ require_once __DIR__ . '/../../includes/oauth/repositories/user-repository.php';
 
 final class OAuthGrantLifecycleTest extends TestCase
 {
-    #[DataProvider('abilityScopeProvider')]
-    public function testAuthorizationCodeIssuanceAndRefreshPreserveTheGrant(string $scope): void
+    #[DataProvider('acceptedScopeProvider')]
+    public function testAuthorizationCodeIssuanceAndRefreshConvergeOnFullAccess(string $scope): void
     {
         $harness = $this->serverHarness();
         $tokens = $this->authorizeAndExchange($harness['server'], $scope);
 
-        self::assertSame([$scope], $this->jwtScopes($tokens['access_token']));
+        self::assertSame(['mcp'], $this->jwtScopes($tokens['access_token']));
         $refreshed = $this->refresh($harness['server'], $tokens['refresh_token']);
-        self::assertSame([$scope], $this->jwtScopes($refreshed['access_token']));
+        self::assertSame(['mcp'], $this->jwtScopes($refreshed['access_token']));
     }
 
     /** @return iterable<string, array{string}> */
-    public static function abilityScopeProvider(): iterable
+    public static function acceptedScopeProvider(): iterable
     {
-        yield 'readonly' => ['abilities:read'];
-        yield 'full' => ['abilities'];
-        yield 'legacy' => ['mcp'];
-    }
-
-    public function testRefreshCannotBroadenReadonlyGrant(): void
-    {
-        $harness = $this->serverHarness();
-        $tokens = $this->authorizeAndExchange($harness['server'], 'abilities:read');
-
-        $this->expectException(OAuthServerException::class);
-        $this->refresh($harness['server'], $tokens['refresh_token'], scope: 'abilities');
+        yield 'old readonly alias' => ['abilities:read'];
+        yield 'old full alias' => ['abilities'];
+        yield 'full access' => ['mcp'];
     }
 
     /**

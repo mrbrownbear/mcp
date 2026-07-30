@@ -44,23 +44,7 @@ final class ScopeRepository implements ScopeRepositoryInterface
         ClientEntityInterface $clientEntity,
         mixed $userIdentifier = null,
     ): array {
-        $granted = array_values(array_filter($scopes, static fn(ScopeEntityInterface $s): bool => in_array(
-            $s->getIdentifier(),
-            \Novamira\OAuth\supported_scopes(),
-            strict: true,
-        )));
-
-        $ability_grants = array_values(array_filter($granted, static fn(ScopeEntityInterface $scope): bool => in_array(
-            $scope->getIdentifier(),
-            ['abilities:read', 'abilities'],
-            strict: true,
-        )));
-        if ($ability_grants !== []) {
-            // `abilities` semantically includes read access, but the explicit grant remains unchanged.
-            return $ability_grants;
-        }
-
-        // Preserve the old read/write alias behavior only for legacy authorization flows.
+        // Every accepted authorization and refresh flow converges on the single full-access grant.
         $mcp = new ScopeEntity();
         $mcp->setIdentifier('mcp');
         return [$mcp];

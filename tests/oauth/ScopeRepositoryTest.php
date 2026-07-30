@@ -42,7 +42,7 @@ final class ScopeRepositoryTest extends TestCase
     }
 
     #[DataProvider('finalizedScopeProvider')]
-    public function testFinalizeNeverBroadensTheExplicitGrant(array $requested, array $expected): void
+    public function testFinalizeAlwaysIssuesTheSingleFullAccessGrant(array $requested, array $expected): void
     {
         $repo = new ScopeRepository();
         $client = $this->createMock(ClientEntityInterface::class);
@@ -57,14 +57,14 @@ final class ScopeRepositoryTest extends TestCase
     /** @return iterable<string, array{list<string>, list<string>}> */
     public static function finalizedScopeProvider(): iterable
     {
-        yield 'readonly' => [['abilities:read'], ['abilities:read']];
-        yield 'full remains full rather than adding read' => [['abilities'], ['abilities']];
-        yield 'explicit ability combination' => [['abilities:read', 'abilities'], ['abilities:read', 'abilities']];
+        yield 'old readonly alias' => [['abilities:read'], ['mcp']];
+        yield 'old full alias' => [['abilities'], ['mcp']];
+        yield 'old ability combination' => [['abilities:read', 'abilities'], ['mcp']];
         yield 'mcp' => [['mcp'], ['mcp']];
         yield 'legacy read alias' => [['read'], ['mcp']];
         yield 'legacy write aliases' => [['read', 'write'], ['mcp']];
         yield 'empty legacy default' => [[], ['mcp']];
-        yield 'mixed input fails narrow to ability grant' => [['mcp', 'abilities:read'], ['abilities:read']];
+        yield 'mixed recognized aliases' => [['mcp', 'abilities:read'], ['mcp']];
     }
 
     private function scope(string $id): ScopeEntity

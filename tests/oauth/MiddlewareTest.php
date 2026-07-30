@@ -448,67 +448,50 @@ final class MiddlewareTest extends TestCase
         self::assertSame(403, $result->get_error_data()['status']);
     }
 
-    public function testReadonlyGrantAllowsListItemAndExplicitlyReadonlyExecution(): void
+    public function testFullAccessGrantAllowsMcpAndEveryAbilityRoute(): void
     {
-        $this->authenticateOauthUser(['abilities:read']);
+        $this->authenticateOauthUser(['mcp']);
 
         foreach ([
+            new WP_REST_Request('POST', '/mcp/novamira-oauth'),
             new WP_REST_Request('GET', '/wp-abilities/v1/abilities'),
             new WP_REST_Request('GET', '/wp-abilities/v1/abilities/novamira/read-file'),
             new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/read-file/run'),
+            new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/write-file/run'),
+            new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/unannotated/run'),
         ] as $request) {
             self::assertNull(\Novamira\OAuth\Middleware\authorize_routed_request(null, null, $request));
         }
     }
 
-    public function testReadonlyGrantDeniesMutatingAndUnannotatedExecution(): void
+    public function testAlreadyIssuedAbilityScopesAreFullAccessMigrationAliases(): void
     {
-        foreach (['write-file', 'unannotated', 'missing'] as $ability) {
-            $this->authenticateOauthUser(['abilities:read']);
-            $result = \Novamira\OAuth\Middleware\authorize_routed_request(
-                null,
-                null,
-                new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/' . $ability . '/run'),
-            );
-            self::assertInstanceOf(WP_Error::class, $result);
-            self::assertSame(403, $result->get_error_data()['status']);
+        foreach (['abilities', 'abilities:read'] as $scope) {
+            foreach ([
+                new WP_REST_Request('POST', '/mcp/novamira-oauth'),
+                new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/write-file/run'),
+            ] as $request) {
+                $this->authenticateOauthUser([$scope]);
+                self::assertNull(\Novamira\OAuth\Middleware\authorize_routed_request(null, null, $request));
+            }
         }
     }
 
-    public function testFullGrantAllowsReadonlyAndMutatingExecutionButNotMcp(): void
-    {
-        foreach (['read-file', 'write-file', 'unannotated'] as $ability) {
-            $this->authenticateOauthUser(['abilities']);
-            self::assertNull(\Novamira\OAuth\Middleware\authorize_routed_request(
-                null,
-                null,
-                new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/' . $ability . '/run'),
-            ));
-        }
-
-        $this->authenticateOauthUser(['abilities']);
-        self::assertInstanceOf(WP_Error::class, \Novamira\OAuth\Middleware\authorize_routed_request(
-            null,
-            null,
-            new WP_REST_Request('POST', '/mcp/novamira-oauth'),
-        ));
-    }
-
-    public function testChallengesDeclareTheMinimumRouteSpecificScope(): void
+    public function testEveryProtectedRouteChallengesForTheSingleFullAccessScope(): void
     {
         self::assertSame(
-            'abilities:read',
+            'mcp',
             \Novamira\OAuth\Middleware\route_required_scope('/wp-abilities/v1/abilities', 'GET'),
         );
         self::assertSame(
-            'abilities:read',
+            'mcp',
             \Novamira\OAuth\Middleware\route_required_scope(
                 '/novamira/v1/abilities/novamira/read-file/run',
                 'POST',
             ),
         );
         self::assertSame(
-            'abilities',
+            'mcp',
             \Novamira\OAuth\Middleware\route_required_scope(
                 '/novamira/v1/abilities/novamira/write-file/run',
                 'POST',
@@ -520,7 +503,7 @@ final class MiddlewareTest extends TestCase
             new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/write-file/run'),
         );
         self::assertInstanceOf(WP_REST_Response::class, $response);
-        self::assertStringContainsString('scope="abilities"', $response->headers['WWW-Authenticate']);
+        self::assertStringContainsString('scope="mcp"', $response->headers['WWW-Authenticate']);
     }
 
     public function testUnauthenticatedChallengeSurvivesTheRoutePermissionCallback(): void
@@ -551,20 +534,20 @@ final class MiddlewareTest extends TestCase
     {
         $this->authenticateOauthUser(['mcp']);
         $forbidden = $this->dispatchAgainstDenyingPermissionCallback(
-            new WP_REST_Request('GET', '/wp-abilities/v1/abilities'),
+            new WP_REST_Request('GET', '/wp/v2/posts'),
         );
         self::assertInstanceOf(WP_REST_Response::class, $forbidden);
         self::assertSame(403, $forbidden->status);
         self::assertStringContainsString('error="insufficient_scope"', $forbidden->headers['WWW-Authenticate']);
 
-        $this->authenticateOauthUser(['abilities:read']);
+        $this->authenticateOauthUser(['unknown']);
         $insufficient = $this->dispatchAgainstDenyingPermissionCallback(
             new WP_REST_Request('POST', '/novamira/v1/abilities/novamira/write-file/run'),
         );
         self::assertInstanceOf(WP_REST_Response::class, $insufficient);
         self::assertSame('rest_oauth_error', $insufficient->data['code']);
         self::assertStringContainsString('error="insufficient_scope"', $insufficient->headers['WWW-Authenticate']);
-        self::assertStringContainsString('scope="abilities"', $insufficient->headers['WWW-Authenticate']);
+        self::assertStringContainsString('scope="mcp"', $insufficient->headers['WWW-Authenticate']);
     }
 
     public function testChallengeAttachmentLeavesUnrelatedResultsUntouched(): void
@@ -587,24 +570,6 @@ final class MiddlewareTest extends TestCase
                 \Novamira\OAuth\Middleware\attach_www_authenticate_challenge($error, null, $request),
             );
         }
-    }
-
-    public function testLegacyMcpGrantRemainsIsolatedToItsExistingEndpoint(): void
-    {
-        $this->authenticateOauthUser(['mcp']);
-        self::assertNull(\Novamira\OAuth\Middleware\authorize_routed_request(
-            null,
-            null,
-            new WP_REST_Request('POST', '/mcp/novamira-oauth'),
-        ));
-
-        $result = \Novamira\OAuth\Middleware\authorize_routed_request(
-            null,
-            null,
-            new WP_REST_Request('GET', '/wp-abilities/v1/abilities'),
-        );
-        self::assertInstanceOf(WP_Error::class, $result);
-        self::assertSame(403, $result->get_error_data()['status']);
     }
 
     public function testChallengeSkipsApplicationPasswordAndLegacyRoutes(): void
@@ -653,7 +618,7 @@ final class MiddlewareTest extends TestCase
     }
 
     /** @param list<string> $scopes */
-    private function authenticateOauthUser(array $scopes = ['abilities']): mixed
+    private function authenticateOauthUser(array $scopes = ['mcp']): mixed
     {
         return \Novamira\OAuth\Middleware\resolve_bearer_identity_using(
             false,

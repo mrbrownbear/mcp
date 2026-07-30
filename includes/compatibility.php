@@ -24,7 +24,6 @@ define(constant_name: 'NOVAMIRA_MINIMUM_WORDPRESS_VERSION', value: '6.9');
  *
  * @return array{
  *     abilities_bearer_auth: bool,
- *     abilities_read_scope: bool,
  *     agent_context: bool,
  *     rest_skills: bool,
  *     generalized_execution_shim: bool
@@ -34,7 +33,6 @@ function novamira_rest_api_features(): array
 {
     return [
         'abilities_bearer_auth' => true,
-        'abilities_read_scope' => true,
         'agent_context' => true,
         'rest_skills' => true,
         'generalized_execution_shim' => true,
