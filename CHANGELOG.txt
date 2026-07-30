@@ -1,3 +1,6 @@
+Unreleased
+* Fix: Abilities that take no parameters, such as reading the active design or listing the design library, now work with AI clients that send no input at all, where they previously returned an invalid input error.
+
 v1.11.1 - 2026/07/30
 * Fix: OAuth connections no longer ask users to reconnect for additional permissions.
 

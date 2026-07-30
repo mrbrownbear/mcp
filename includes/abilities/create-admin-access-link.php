@@ -22,6 +22,7 @@ wp_register_ability('novamira/create-admin-access-link', [
     'category' => 'admin-access',
     'input_schema' => [
         'type' => 'object',
+        'default' => [],
         'properties' => [
             'expires_in' => [
                 'type' => 'integer',

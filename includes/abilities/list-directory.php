@@ -22,6 +22,7 @@ wp_register_ability('novamira/list-directory', [
     'category' => 'filesystem',
     'input_schema' => [
         'type' => 'object',
+        'default' => [],
         'properties' => [
             'path' => [
                 'type' => 'string',

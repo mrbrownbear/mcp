@@ -31,6 +31,7 @@ function register(): void
         'category' => Abilities\CATEGORY,
         'input_schema' => [
             'type' => 'object',
+            'default' => [],
             'properties' => new \stdClass(),
         ],
         'output_schema' => [

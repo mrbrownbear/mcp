@@ -20,6 +20,7 @@ wp_register_ability('novamira/gutenberg-list-pending-batches', [
     'category' => 'gutenberg',
     'input_schema' => [
         'type' => 'object',
+        'default' => [],
         'properties' => [
             'status' => [
                 'type' => 'string',

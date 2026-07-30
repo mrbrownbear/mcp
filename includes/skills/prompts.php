@@ -51,6 +51,7 @@ function register_dynamic_abilities(): void
             'category' => 'skill',
             'input_schema' => [
                 'type' => 'object',
+                'default' => [],
                 'properties' => new \stdClass(),
             ],
             'output_schema' => [

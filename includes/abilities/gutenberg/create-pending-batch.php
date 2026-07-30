@@ -23,6 +23,7 @@ wp_register_ability('novamira/gutenberg-create-pending-batch', [
     'category' => 'gutenberg',
     'input_schema' => [
         'type' => 'object',
+        'default' => [],
         'properties' => [
             'label' => ['type' => 'string', 'description' => 'Human-readable batch label.'],
             'agent_label' => ['type' => 'string', 'description' => 'Display name for the originating agent/client.'],
