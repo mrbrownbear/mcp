@@ -1,4 +1,4 @@
-Unreleased
+v1.11.1 - 2026/07/30
 * Fix: OAuth connections no longer ask users to reconnect for additional permissions.
 
 v1.11.0 - 2026/07/28
