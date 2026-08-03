@@ -96,6 +96,12 @@ function boot(): void
     require_once __DIR__ . '/endpoints/discovery.php';
     Endpoints\Discovery\register();
 
+    // Older MCP clients fall back to /authorize, /register and /token when authorization-server
+    // metadata cannot be read. Serve those paths only when WordPress would otherwise return 404,
+    // so existing pages and custom routes keep ownership of the generic slugs.
+    require_once __DIR__ . '/endpoints/legacy-fallback.php';
+    Endpoints\LegacyFallback\register();
+
     require_once __DIR__ . '/repositories/client-repository.php';
     require_once __DIR__ . '/repositories/access-token-repository.php';
     require_once __DIR__ . '/repositories/auth-code-repository.php';
