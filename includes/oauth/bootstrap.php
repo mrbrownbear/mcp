@@ -16,6 +16,15 @@ if (!defined('ABSPATH')) {
 // many connections are active precisely when the gates are closed, and must not fatal doing so.
 require_once __DIR__ . '/client-validation.php';
 
+// Also outside boot(): the key-bootstrap command exists to repair an installation whose web PHP
+// cannot create the OAuth keys at all, so it must not depend on the gates below. WP-CLI defines
+// WP_CLI before plugins load, so nothing extra is read on a web request.
+if (defined('WP_CLI') && constant('WP_CLI') === true) {
+    require_once __DIR__ . '/keys.php';
+    require_once __DIR__ . '/cli.php';
+    Cli\register();
+}
+
 /**
  * Canonical identifier of the OAuth-protected MCP resource: the audience minted into every access
  * token (RFC 8707) and validated by the middleware. Derived in one place so the signer and the

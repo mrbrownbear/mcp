@@ -10,6 +10,7 @@ namespace Novamira\OAuth\Consent;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Novamira\OAuth\Bridge;
 use Novamira\OAuth\Endpoints\Authorize;
+use Novamira\OAuth\Keys\KeyBootstrapError;
 use Novamira\OAuth\Repositories\ClientRepository;
 use Novamira\OAuth\Repositories\UserEntity;
 use Novamira\OAuth\ServerFactory;
@@ -174,6 +175,20 @@ function render_post(string $token, array $pending, string $redirect_uri, string
             'state' => $state,
         ], $redirect_uri));
         exit();
+    } catch (KeyBootstrapError $e) {
+        // The generic message below would hide the one failure an operator can act on: this site
+        // has no OAuth signing key and its PHP cannot make one. The reason (OpenSSL error strings
+        // and configuration paths, never key material) goes to the PHP error log.
+        delete_transient(Authorize\PENDING_PREFIX . $token);
+        error_log('Novamira OAuth: ' . $e->getMessage());
+        wp_die(
+            esc_html__(
+                'Novamira could not create the OAuth signing keys for this site. The PHP error log records the OpenSSL reason. Run "wp novamira oauth-keys generate" from WP-CLI to create the keys, then authorize again.',
+                domain: 'novamira',
+            ),
+            title: '',
+            args: ['response' => 500],
+        );
     } catch (\Throwable $e) {
         delete_transient(Authorize\PENDING_PREFIX . $token);
         wp_die('An error occurred during authorization. Please try again.', title: '', args: ['response' => 500]);
