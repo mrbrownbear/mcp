@@ -1,9 +1,10 @@
-Unreleased
+v1.11.2 - 2026/08/04
 * Fix: Abilities that take no parameters, such as reading the active design or listing the design library, now work with AI clients that send no input at all, where they previously returned an invalid input error.
 * Fix: WP-CLI now runs on Windows, including Local (Local by Flywheel) sites. Set NOVAMIRA_WP_CLI_COMMAND or use the novamira_wp_cli_command filter when detection is not enough.
 * Fix: Background WP-CLI jobs on Windows return their job ID and the command's real exit code, and no longer corrupt paths or arguments containing %, !, quotation marks or accented characters.
 * Fix: A wp.bat launcher is used only when its wp-cli.phar sits beside it, so command arguments never pass through the Windows command interpreter.
 * Fix: OAuth key generation failures now report what OpenSSL refused and how to fix it, and "wp novamira oauth-keys generate" creates the keys from a working PHP environment.
+* Minor Fixes
 
 v1.11.1 - 2026/07/30
 * Fix: OAuth connections no longer ask users to reconnect for additional permissions.

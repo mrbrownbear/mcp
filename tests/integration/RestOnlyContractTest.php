@@ -20,7 +20,7 @@ final class RestOnlyContractTest extends TestCase
         $server = $this->server($siteUrl, $forwardingMode);
         $metadata = $this->getMetadata($server, $siteUrl);
         self::assertSame(1, $metadata['novamira']['rest_api_version']);
-        self::assertSame('1.11.1', $metadata['novamira']['plugin_version']);
+        self::assertSame('1.11.2', $metadata['novamira']['plugin_version']);
         self::assertNotContains(false, $metadata['novamira']['features']);
 
         $token = $this->authorize($server, $siteUrl, 'mcp');
@@ -241,7 +241,7 @@ final class RestOnlyContractTest extends TestCase
             private function compatibility(): array
             {
                 return [
-                    'plugin_version' => '1.11.1',
+                    'plugin_version' => '1.11.2',
                     'rest_api_version' => 1,
                     'wordpress_version' => '6.9.2',
                     'minimum_wordpress_version' => '6.9',
