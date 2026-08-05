@@ -631,6 +631,11 @@ if ($is_enabled && $novamira_abilities_supported) {
     novamira_load_gutenberg_runtime();
     novamira_register_ability_hooks();
 
+    // MCP clients commonly leave sessions behind when they disconnect. Keep enough short-lived
+    // sessions to avoid the adapter evicting active sessions when its default 32-session cap is reached.
+    add_filter('mcp_adapter_session_max_per_user', static fn(): int => 128);
+    add_filter('mcp_adapter_session_inactivity_timeout', static fn(): int => 4 * HOUR_IN_SECONDS);
+
     // Brand the default MCP server. Usage instructions are returned from the
     // discover-abilities tool instead of the initialize handshake.
     add_filter('mcp_adapter_default_server_config', static function (mixed $config): mixed {
