@@ -224,6 +224,8 @@ function gutenberg_finalizer_script(): string
             let dashboardPollRunning = false;
             let editorFrameUrl = '';
             let editorFrameLoadPromise = Promise.resolve();
+            let frameAccessError = null;
+            let fallbackWarning = '';
 
             const path = ( suffix ) => `/novamira/v1${ suffix }`;
 
@@ -387,25 +389,61 @@ function gutenberg_finalizer_script(): string
                 }
             };
 
-            const editorBlocksApi = () => {
-                const frameWindow = iframeWindow();
-                if ( ! frameWindow || ! frameWindow.wp || ! frameWindow.wp.blocks ) {
+            const requiredBlocksMethods = [ 'createBlock', 'serialize', 'parse', 'validateBlock', 'getBlockType' ];
+
+            const usableBlocksApi = ( blocksApi ) => {
+                if ( ! blocksApi ) {
                     return null;
                 }
 
-                const blocksApi = frameWindow.wp.blocks;
-                const required = [ 'createBlock', 'serialize', 'parse', 'validateBlock', 'getBlockType' ];
-                const hasRequiredMethods = required.every( ( method ) => typeof blocksApi[ method ] === 'function' );
+                const hasRequiredMethods = requiredBlocksMethods.every(
+                    ( method ) => typeof blocksApi[ method ] === 'function'
+                );
 
                 return hasRequiredMethods ? blocksApi : null;
+            };
+
+            // Every read below crosses a frame boundary, so any property access can throw a
+            // SecurityError when the frame ends up in another origin. Treat that as "not ready"
+            // and record it, so the caller can stop polling and explain what happened.
+            const editorBlocksApi = () => {
+                try {
+                    const frameWindow = iframeWindow();
+                    if ( ! frameWindow ) {
+                        return null;
+                    }
+
+                    const wpApi = frameWindow.wp;
+
+                    return wpApi ? usableBlocksApi( wpApi.blocks ) : null;
+                } catch ( error ) {
+                    frameAccessError = error;
+                    return null;
+                }
+            };
+
+            const crossOriginFrameError = ( error ) => {
+                const detail = error && error.message ? ` (${ error.message })` : '';
+                const frameError = new Error(
+                    'The hidden editor iframe loaded in a different origin, so its block editor runtime cannot be read. '
+                    + 'This usually means the editor URL redirected to another host or scheme, or the iframe was blocked '
+                    + `by an X-Frame-Options / Content-Security-Policy header, a proxy, or a browser extension.${ detail }`
+                );
+                frameError.code = 'editor_frame_cross_origin';
+                return frameError;
             };
 
             const waitForEditorBlocksApi = async () => {
                 const startedAt = Date.now();
                 while ( Date.now() - startedAt < editorLoadTimeoutMs ) {
+                    frameAccessError = null;
                     const blocksApi = editorBlocksApi();
                     if ( blocksApi ) {
                         return blocksApi;
+                    }
+                    // The frame already fired "load", so a blocked read will not resolve by waiting.
+                    if ( frameAccessError ) {
+                        throw crossOriginFrameError( frameAccessError );
                     }
                     await sleep( 100 );
                 }
@@ -439,6 +477,26 @@ function gutenberg_finalizer_script(): string
                 return error;
             };
 
+            let coreBlocksRegistered = false;
+
+            // Fallback runtime: this admin page loads wp-blocks and wp-block-library itself, so core
+            // blocks can be serialized here when the hidden iframe is unreachable.
+            const localBlocksApi = () => {
+                const wpApi = window.wp;
+                if ( ! wpApi ) {
+                    return null;
+                }
+
+                if ( ! coreBlocksRegistered ) {
+                    coreBlocksRegistered = true;
+                    if ( wpApi.blockLibrary && typeof wpApi.blockLibrary.registerCoreBlocks === 'function' ) {
+                        wpApi.blockLibrary.registerCoreBlocks();
+                    }
+                }
+
+                return usableBlocksApi( wpApi.blocks );
+            };
+
             const waitForBlockRegistrations = async ( blocksApi, refs ) => {
                 const startedAt = Date.now();
                 let missingRefs = refs.filter( ( ref ) => ! blocksApi.getBlockType( ref.name ) );
@@ -453,10 +511,37 @@ function gutenberg_finalizer_script(): string
             };
 
             const loadEditorBlocksApi = async ( editorUrl, blocks ) => {
-                await navigateEditorFrame( editorUrl );
-                const blocksApi = await waitForEditorBlocksApi();
-                await waitForBlockRegistrations( blocksApi, collectBlockRefs( blocks ) );
-                return blocksApi;
+                const refs = collectBlockRefs( blocks );
+                let frameError = null;
+
+                try {
+                    await navigateEditorFrame( editorUrl );
+                    const blocksApi = await waitForEditorBlocksApi();
+                    await waitForBlockRegistrations( blocksApi, refs );
+                    return blocksApi;
+                } catch ( error ) {
+                    frameError = error;
+                }
+
+                const fallbackApi = localBlocksApi();
+                if ( ! fallbackApi ) {
+                    throw frameError;
+                }
+
+                const missingRefs = refs.filter( ( ref ) => ! fallbackApi.getBlockType( ref.name ) );
+                if ( missingRefs.length ) {
+                    // Blocks the iframe would have registered, such as plugin or theme blocks, are
+                    // unavailable here. Report the missing names rather than the frame failure.
+                    throw frameError && frameError.code === 'missing_block_registration'
+                        ? frameError
+                        : missingRegistrationError( missingRefs );
+                }
+
+                fallbackWarning = 'The hidden block editor iframe could not be used, so blocks were serialized with the '
+                    + 'block runtime of this page. Only blocks registered on this page are supported. Reason: '
+                    + ( frameError && frameError.message ? frameError.message : 'unknown.' );
+
+                return fallbackApi;
             };
 
             const toBlock = ( blocksApi, spec ) => blocksApi.createBlock(
@@ -527,7 +612,11 @@ function gutenberg_finalizer_script(): string
 
             const finalNotice = ( batch ) => {
                 if ( batch && batch.status === 'finalized' ) {
-                    clearNotice();
+                    if ( fallbackWarning ) {
+                        setNotice( 'warning', fallbackWarning );
+                    } else {
+                        clearNotice();
+                    }
                     setProgress( 'Nothing to do. The queue is ready.' );
                     return;
                 }
@@ -546,6 +635,7 @@ function gutenberg_finalizer_script(): string
                 }
 
                 isRunning = true;
+                fallbackWarning = '';
                 try {
                     clearNotice();
                     setProgress( 'Working on queued Gutenberg changes...' );
@@ -610,20 +700,20 @@ function gutenberg_finalizer_script(): string
                                     path: ref.path || '',
                                     category: 'registration',
                                     code: 'missing_block_registration',
-                                    message: `Block "${ ref.name || '(missing name)' }" was not registered in the editor iframe.`,
+                                    message: `Block "${ ref.name || '(missing name)' }" was not registered in the block editor runtime.`,
                                 } ) )
                                 : [ {
                                     block_name: '',
                                     path: '',
                                     category: 'serialization',
-                                    code: 'js_exception',
-                                    message: error.message || String( error ),
+                                    code: ( error && error.code ) || 'js_exception',
+                                    message: error && error.message ? error.message : String( error ),
                                 } ];
                             await failCurrentItem(
                                 item.item_id,
                                 errorItems,
                                 isMissingRegistration
-                                    ? 'One or more Gutenberg blocks were not registered in the editor iframe; canonical content was not written.'
+                                    ? 'One or more Gutenberg blocks were not registered in the block editor runtime; canonical content was not written.'
                                     : 'The browser block serializer threw an exception.'
                             );
                             setProgress( 'Something needs attention. Return to the agent.' );

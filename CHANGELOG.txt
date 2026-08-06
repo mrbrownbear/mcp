@@ -1,3 +1,5 @@
+* Fix: The Block Editor Queue no longer fails every batch with a "Blocked a frame with origin ... from accessing a cross-origin frame" error. When the hidden block editor iframe cannot be read, the queue now serializes with the block runtime of the queue page itself and reports why the iframe was unavailable, instead of failing the batch.
+
 v1.11.2 - 2026/08/04
 * Fix: Abilities that take no parameters, such as reading the active design or listing the design library, now work with AI clients that send no input at all, where they previously returned an invalid input error.
 * Fix: WP-CLI now runs on Windows, including Local (Local by Flywheel) sites. Set NOVAMIRA_WP_CLI_COMMAND or use the novamira_wp_cli_command filter when detection is not enough.
