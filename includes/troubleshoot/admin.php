@@ -77,7 +77,7 @@ function render_page(): void
     <div class="wrap">
         <h1 class="wp-heading-inline"><?php esc_html_e('Troubleshoot the Connection', domain: 'novamira'); ?></h1>
         <hr class="wp-header-end">
-        <p class="description" style="max-width:40em;"><?php esc_html_e(
+        <p class="description"><?php esc_html_e(
             'Run these checks when an AI client cannot connect. They probe this site the way a client does and point at what to fix.',
             domain: 'novamira',
         ); ?></p>
