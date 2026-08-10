@@ -229,6 +229,7 @@ require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/abilities/bootstrap.php';
 require_once __DIR__ . '/includes/updater.php';
 require_once __DIR__ . '/includes/admin-page.php';
+require_once __DIR__ . '/includes/hosting/detector.php';
 require_once __DIR__ . '/includes/connect-page.php';
 require_once __DIR__ . '/includes/pro-upsell.php';
 require_once __DIR__ . '/includes/upload-link.php';

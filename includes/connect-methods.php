@@ -205,12 +205,23 @@ function novamira_oauth_bridge_codex(string $mcp_name, string $mcp_url, array $e
 function novamira_oauth_bridge_claude_code(string $mcp_name, string $mcp_url, array $env): string
 {
     $sq = static fn(string $v): string => "'" . str_replace(search: "'", replace: "'\\''", subject: $v) . "'";
-    $parts = ['claude mcp add ' . $sq($mcp_name)];
+    // Claude Code's --env option is variadic: keep the server name before the first -e or the
+    // parser treats the name itself as another KEY=value environment entry.
+    $parts = ['claude mcp add', '--scope user', $sq($mcp_name)];
     foreach ($env as $key => $value) {
-        $parts[] = '--env ' . $key . '=' . $sq($value);
+        $parts[] = '-e ' . $key . '=' . $sq($value);
     }
     $parts[] = '-- npx -y mcp-remote ' . $sq($mcp_url);
     return implode(" \\\n  ", $parts);
+}
+
+/**
+ * User-scoped Claude Code command for a native remote HTTP server.
+ */
+function novamira_oauth_native_claude_code(string $mcp_name, string $mcp_url): string
+{
+    $sq = static fn(string $v): string => "'" . str_replace(search: "'", replace: "'\\''", subject: $v) . "'";
+    return 'claude mcp add --transport http --scope user ' . $sq($mcp_name) . ' ' . $sq($mcp_url);
 }
 
 /**
@@ -276,8 +287,8 @@ function novamira_oauth_cloud_only_notice(string $client_label): array
  * On a publicly reachable site each client gets its native remote-MCP form (a URL the client
  * connects to and runs OAuth against itself), except a tail of clients whose native OAuth flow
  * is not verified, which fall back to the mcp-remote stdio bridge. On a local site every client
- * uses the bridge (which also carries the self-signed TLS bypass), and the browser-only
- * Claude.ai target is omitted because a local URL is unreachable for it.
+ * uses the bridge (which also carries the self-signed TLS bypass). Browser-only cloud clients
+ * receive an explanatory notice because they cannot reach a local URL.
  *
  * ChatGPT is cloud-only like Claude.ai but always kept in the list: publicly it gets the
  * developer-mode plugin steps, locally a notice explaining it needs a public site.
@@ -292,7 +303,10 @@ function novamira_build_oauth_configs(string $mcp_url, string $mcp_name): array
     if (novamira_host_unreachable_from_cloud()) {
         return (
             novamira_build_oauth_bridge_configs($mcp_url, $mcp_name, $env)
-            + ['chatgpt' => novamira_oauth_cloud_only_notice('ChatGPT')]
+            + [
+                'claude-ai' => novamira_oauth_cloud_only_notice('Claude.ai'),
+                'chatgpt' => novamira_oauth_cloud_only_notice('ChatGPT'),
+            ]
         );
     }
     return (
@@ -320,7 +334,7 @@ function novamira_build_oauth_configs(string $mcp_url, string $mcp_name): array
 function novamira_build_oauth_public_configs(string $mcp_url, string $mcp_name): array
 {
     $bridge = novamira_build_oauth_bridge_configs($mcp_url, $mcp_name, []);
-    $tail = ['antigravity', 'cline', 'roo-code', 'amazon-q', 'zed', 'kilo-code', 'opencode'];
+    $tail = ['cline', 'roo-code', 'amazon-q', 'zed', 'kilo-code', 'opencode'];
 
     return array_merge(
         array_intersect_key($bridge, array_flip($tail)),
@@ -363,50 +377,107 @@ function novamira_oauth_connector_steps(string $app_label, string $mcp_name, str
 }
 
 /**
- * CLI alternative shown under the Codex config.toml snippet, for users who prefer the terminal to
- * editing the file. The server name is the placeholder swapped in client-side; both it and the URL
- * are HTML-escaped here because the note is rendered as raw markup, not through the escaping step
- * the config snippets pass through.
+ * Codex CLI command for a remote HTTP MCP server. Codex stores it in the user-level config.
  */
-function novamira_oauth_codex_cli_note(string $mcp_name, string $mcp_url): string
+function novamira_codex_http_add_command(string $mcp_name, string $mcp_url): string
 {
-    return sprintf(
-        /* translators: 1: codex mcp add command, 2: codex mcp login command, both in <code> tags */
-        __('Prefer the terminal? Run %1$s, then %2$s.', domain: 'novamira'),
-        '<code>codex mcp add ' . esc_html($mcp_name) . ' --url ' . esc_html($mcp_url) . '</code>',
-        '<code>codex mcp login ' . esc_html($mcp_name) . '</code>',
-    );
+    $sq = static fn(string $v): string => "'" . str_replace(search: "'", replace: "'\\''", subject: $v) . "'";
+    return 'codex mcp add ' . $sq($mcp_name) . ' --url ' . $sq($mcp_url);
 }
 
 /**
- * CLI alternative shown under the local (bridge) Codex config.toml snippet. Unlike the public form,
- * this adds the stdio bridge command (npx mcp-remote), carrying the same TLS-bypass env the snippet
- * above uses, and needs no separate login step because the bridge runs the OAuth flow itself.
+ * Codex CLI command that launches a local stdio MCP server with optional environment variables.
  *
  * @param array<string, string> $env
  */
-function novamira_oauth_codex_bridge_cli_note(string $mcp_name, string $mcp_url, array $env): string
+function novamira_codex_stdio_add_command(string $mcp_name, array $env, string $command): string
 {
-    $cmd = 'codex mcp add ' . esc_html($mcp_name);
+    $sq = static fn(string $v): string => "'" . str_replace(search: "'", replace: "'\\''", subject: $v) . "'";
+    $parts = ['codex mcp add ' . $sq($mcp_name)];
     foreach ($env as $key => $value) {
-        $cmd .= ' --env ' . esc_html($key) . '=' . esc_html($value);
+        $parts[] = '--env ' . $key . '=' . $sq($value);
     }
-    $cmd .= ' -- npx -y mcp-remote ' . esc_html($mcp_url);
+    $parts[] = '-- ' . $command;
+    return implode(" \\" . PHP_EOL . '  ', $parts);
+}
 
-    /* translators: %s: codex mcp add command in <code> tags */
-    return sprintf(__('Prefer the terminal? Run %s.', domain: 'novamira'), '<code>' . $cmd . '</code>');
+/**
+ * Codex CLI command for the local OAuth bridge.
+ *
+ * @param array<string, string> $env
+ */
+function novamira_oauth_codex_bridge_command(string $mcp_name, string $mcp_url, array $env): string
+{
+    $sq = static fn(string $v): string => "'" . str_replace(search: "'", replace: "'\\''", subject: $v) . "'";
+    return novamira_codex_stdio_add_command($mcp_name, $env, 'npx -y mcp-remote ' . $sq($mcp_url));
+}
+
+/**
+ * Terminal-first OAuth setup for a native Codex HTTP connection.
+ *
+ * @return list<array<string, string>>
+ */
+function novamira_oauth_codex_cli_steps(string $mcp_name, string $mcp_url): array
+{
+    $sq = static fn(string $v): string => "'" . str_replace(search: "'", replace: "'\\''", subject: $v) . "'";
+    return [
+        [
+            'title' => __('Register the server globally', domain: 'novamira'),
+            'body' => __(
+                'Run this in your terminal. Codex saves MCP servers in your user configuration, so the server is available in every project.',
+                domain: 'novamira',
+            ),
+            'code' => novamira_codex_http_add_command($mcp_name, $mcp_url),
+        ],
+        [
+            'title' => __('Sign in with OAuth', domain: 'novamira'),
+            'body' => __('Run this command and approve the authorization request in your browser.', domain: 'novamira'),
+            'code' => 'codex mcp login ' . $sq($mcp_name),
+        ],
+    ];
+}
+
+/**
+ * In-app setup for Codex inside ChatGPT Desktop.
+ *
+ * @return list<array<string, string>>
+ */
+function novamira_oauth_codex_desktop_steps(string $mcp_name, string $mcp_url): array
+{
+    return [
+        [
+            'title' => __('Open MCP servers', domain: 'novamira'),
+            'body' => __('In ChatGPT Desktop, open Settings and select MCP servers.', domain: 'novamira'),
+        ],
+        [
+            'title' => __('Add a server name', domain: 'novamira'),
+            'body' => __('Select Add server, choose Streamable HTTP, and use this name:', domain: 'novamira'),
+            'copy' => $mcp_name,
+        ],
+        [
+            'title' => __('Enter the server URL', domain: 'novamira'),
+            'body' => __('Paste this URL and save the server:', domain: 'novamira'),
+            'copy' => $mcp_url,
+        ],
+        [
+            'title' => __('Authenticate', domain: 'novamira'),
+            'body' => __(
+                'Select Authenticate for the new server and approve the authorization request in your browser. Restart ChatGPT Desktop if prompted.',
+                domain: 'novamira',
+            ),
+        ],
+    ];
 }
 
 /**
  * Native remote configs for clients that run the OAuth flow themselves. Claude Desktop and
- * Claude.ai share the custom-connector prefill (a button, not a snippet); Claude.ai is
- * public-only, which is why it never appears in the local (bridge) set.
+ * Claude.ai share the custom-connector prefill (a button, not a snippet). On a local site,
+ * Claude.ai gets a notice explaining that its cloud servers cannot reach the site.
  *
  * @return array<string, array<string, mixed>>
  */
 function novamira_build_oauth_native_configs(string $mcp_url, string $mcp_name): array
 {
-    $tq = static fn(string $v): string => '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], $v) . '"';
     $connector = novamira_build_connector_install_link(
         $mcp_url,
         novamira_build_connector_display_name(get_bloginfo('name')),
@@ -425,12 +496,24 @@ function novamira_build_oauth_native_configs(string $mcp_url, string $mcp_name):
         'paths' => [],
         'isShell' => false,
     ];
+    $antigravity_entry = novamira_oauth_code_entry(
+        novamira_oauth_json('mcpServers', $mcp_name, ['serverUrl' => $mcp_url]),
+        novamira_oauth_add_to('mcp_config.json'),
+        [
+            __('Global (macOS / Linux)', domain: 'novamira') => '~/.gemini/config/mcp_config.json',
+            __('Global (Windows)', domain: 'novamira') => '%USERPROFILE%\\.gemini\\config\\mcp_config.json',
+            __('Workspace', domain: 'novamira') => '.agents/mcp_config.json',
+        ],
+    );
 
     return [
         'claude-code' => [
             'kind' => 'code',
-            'code' => 'claude mcp add ' . $mcp_name . ' --transport http ' . $mcp_url,
-            'hint' => __('Run in your terminal, then sign in when your browser opens.', domain: 'novamira'),
+            'code' => novamira_oauth_native_claude_code($mcp_name, $mcp_url),
+            'hint' => __(
+                'Run in your terminal to make this server available in all your projects, then sign in when your browser opens.',
+                domain: 'novamira',
+            ),
             'paths' => [],
             'isShell' => true,
         ],
@@ -452,17 +535,24 @@ function novamira_build_oauth_native_configs(string $mcp_url, string $mcp_name):
             )),
             ['steps' => novamira_oauth_connector_steps('claude.ai', $mcp_name, $mcp_url)],
         ),
-        'codex' => novamira_oauth_code_entry(
-            "[mcp_servers.{$mcp_name}]\nurl = " . $tq($mcp_url),
-            sprintf(
-                /* translators: 1: config.toml file name, 2: codex mcp login command, both in <code> tags */
-                __('Add to %1$s. Then sign in with %2$s.', domain: 'novamira'),
-                '<code>config.toml</code>',
-                '<code>codex mcp login</code>',
-            ),
-            ['macOS / Linux' => '~/.codex/config.toml', 'Windows' => '%USERPROFILE%\\.codex\\config.toml'],
-            novamira_oauth_codex_cli_note($mcp_name, $mcp_url),
-        ),
+        'codex-app' => [
+            'kind' => 'code',
+            'code' => '',
+            'hint' => '',
+            'paths' => [],
+            'isShell' => false,
+            'steps' => novamira_oauth_codex_desktop_steps($mcp_name, $mcp_url),
+        ],
+        'codex-cli' => [
+            'kind' => 'code',
+            'code' => '',
+            'hint' => '',
+            'paths' => [],
+            'isShell' => true,
+            'steps' => novamira_oauth_codex_cli_steps($mcp_name, $mcp_url),
+        ],
+        'antigravity' => $antigravity_entry,
+        'antigravity-cli' => $antigravity_entry,
         'cursor' => array_merge(
             novamira_oauth_code_entry(
                 novamira_oauth_json('mcpServers', $mcp_name, ['url' => $mcp_url]),
@@ -489,14 +579,6 @@ function novamira_build_oauth_native_configs(string $mcp_url, string $mcp_name):
             novamira_oauth_json('servers', $mcp_name, ['type' => 'http', 'url' => $mcp_url]),
             novamira_oauth_add_to('mcp.json'),
             [__('Project', domain: 'novamira') => '.github/copilot/mcp.json'],
-        ),
-        'gemini-cli' => novamira_oauth_code_entry(
-            novamira_oauth_json('mcpServers', $mcp_name, ['httpUrl' => $mcp_url]),
-            novamira_oauth_add_to('settings.json'),
-            [
-                __('Global', domain: 'novamira') => '~/.gemini/settings.json',
-                __('Project', domain: 'novamira') => '.gemini/settings.json',
-            ],
         ),
         'windsurf' => novamira_oauth_code_entry(
             novamira_oauth_json('mcpServers', $mcp_name, ['serverUrl' => $mcp_url]),
@@ -557,16 +639,28 @@ function novamira_build_oauth_bridge_special(string $mcp_url, string $mcp_name, 
         'claude-code' => [
             'kind' => 'code',
             'code' => novamira_oauth_bridge_claude_code($mcp_name, $mcp_url, $env),
-            'hint' => __('Run in your terminal, then sign in when your browser opens.', domain: 'novamira'),
+            'hint' => __(
+                'Run in your terminal to make this server available in all your projects, then sign in when your browser opens.',
+                domain: 'novamira',
+            ),
             'paths' => [],
             'isShell' => true,
         ],
-        'codex' => novamira_oauth_code_entry(
+        'codex-app' => novamira_oauth_code_entry(
             novamira_oauth_bridge_codex($mcp_name, $mcp_url, $env),
             novamira_oauth_add_to('config.toml'),
             ['macOS / Linux' => '~/.codex/config.toml', 'Windows' => '%USERPROFILE%\\.codex\\config.toml'],
-            novamira_oauth_codex_bridge_cli_note($mcp_name, $mcp_url, $env),
         ),
+        'codex-cli' => [
+            'kind' => 'code',
+            'code' => novamira_oauth_codex_bridge_command($mcp_name, $mcp_url, $env),
+            'hint' => __(
+                'Run in your terminal. Codex saves the server in your user configuration, shared across projects.',
+                domain: 'novamira',
+            ),
+            'paths' => [],
+            'isShell' => true,
+        ],
         'zed' => novamira_oauth_code_entry($zed_json, novamira_oauth_add_to('settings.json'), [
             'macOS / Linux' => '~/.config/zed/settings.json',
         ]),
@@ -595,8 +689,14 @@ function novamira_build_oauth_bridge_standard(string $mcp_servers_json, string $
             ],
         ),
         'antigravity' => novamira_oauth_code_entry($mcp_servers_json, novamira_oauth_add_to('mcp_config.json'), [
-            'macOS / Linux' => '~/.gemini/config/mcp_config.json',
-            'Windows' => '%USERPROFILE%\\.gemini\\config\\mcp_config.json',
+            __('Global (macOS / Linux)', domain: 'novamira') => '~/.gemini/config/mcp_config.json',
+            __('Global (Windows)', domain: 'novamira') => '%USERPROFILE%\\.gemini\\config\\mcp_config.json',
+            __('Workspace', domain: 'novamira') => '.agents/mcp_config.json',
+        ]),
+        'antigravity-cli' => novamira_oauth_code_entry($mcp_servers_json, novamira_oauth_add_to('mcp_config.json'), [
+            __('Global (macOS / Linux)', domain: 'novamira') => '~/.gemini/config/mcp_config.json',
+            __('Global (Windows)', domain: 'novamira') => '%USERPROFILE%\\.gemini\\config\\mcp_config.json',
+            __('Workspace', domain: 'novamira') => '.agents/mcp_config.json',
         ]),
         'cursor' => novamira_oauth_code_entry($mcp_servers_json, novamira_oauth_add_to('mcp.json'), [
             __('Global', domain: 'novamira') => '~/.cursor/mcp.json',
@@ -621,10 +721,6 @@ function novamira_build_oauth_bridge_standard(string $mcp_servers_json, string $
                 'Cline sidebar → MCP Servers → Configure MCP Servers',
                 domain: 'novamira',
             ),
-        ]),
-        'gemini-cli' => novamira_oauth_code_entry($mcp_servers_json, novamira_oauth_add_to('settings.json'), [
-            __('Global', domain: 'novamira') => '~/.gemini/settings.json',
-            __('Project', domain: 'novamira') => '.gemini/settings.json',
         ]),
         'roo-code' => novamira_oauth_code_entry($mcp_servers_json, novamira_oauth_add_to('mcp.json'), [
             __('Project', domain: 'novamira') => '.roo/mcp.json',
