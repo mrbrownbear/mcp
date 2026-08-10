@@ -42,13 +42,20 @@ final class ClientEntity implements ClientEntityInterface
 
 final class ClientRepository implements ClientRepositoryInterface
 {
-    /** @param list<string> $redirect_uris */
+    /** The grants a client registered before Novamira recorded them, and the default for new ones. */
+    public const DEFAULT_GRANT_TYPES = ['authorization_code', 'refresh_token'];
+
+    /**
+     * @param list<string> $redirect_uris
+     * @param list<string>|null $grant_types
+     */
     // @mago-expect lint:no-boolean-flag-parameter
     public function create(
         string $client_name,
         array $redirect_uris,
         string $registered_by_ip,
         bool $admin_created = false,
+        ?array $grant_types = null,
     ): string {
         // @mago-expect lint:no-global
         global $wpdb;
@@ -64,8 +71,39 @@ final class ClientRepository implements ClientRepositoryInterface
             'last_used_at' => null,
             'registered_by_ip_hash' => hash('sha256', $registered_by_ip),
             'admin_created' => $admin_created ? 1 : 0,
+            'grant_types' => (string) wp_json_encode($grant_types ?? self::DEFAULT_GRANT_TYPES),
         ]);
         return $client_id;
+    }
+
+    /**
+     * Whether this client registered for a grant. Rows written before the column existed carry no
+     * list and keep the grants every client had then, so an upgrade never invalidates a live
+     * connection.
+     */
+    public function supports_grant(string $client_id, string $grant_type): bool
+    {
+        // @mago-expect lint:no-global
+        global $wpdb;
+        /** @var \wpdb $wpdb */
+        // @mago-expect analysis:possibly-invalid-argument
+        $sql = $wpdb->prepare(
+            "SELECT grant_types FROM {$wpdb->prefix}novamira_oauth_clients WHERE client_id = %s",
+            $client_id,
+        );
+        if (!is_string($sql)) {
+            return false;
+        }
+        $raw = $wpdb->get_var($sql);
+        if (!is_string($raw) || $raw === '') {
+            return in_array($grant_type, self::DEFAULT_GRANT_TYPES, strict: true);
+        }
+        // @mago-expect analysis:mixed-assignment
+        $decoded = json_decode($raw, associative: true);
+        if (!is_array($decoded)) {
+            return in_array($grant_type, self::DEFAULT_GRANT_TYPES, strict: true);
+        }
+        return in_array($grant_type, $decoded, strict: true);
     }
 
     public function getClientEntity(mixed $clientIdentifier): ?ClientEntityInterface

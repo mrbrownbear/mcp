@@ -26,6 +26,12 @@ if (defined('WP_CLI') && constant('WP_CLI') === true) {
 }
 
 /**
+ * RFC 8628 grant identifier, named once here because discovery advertises it, the registration
+ * endpoint accepts it, and the grant answers to it — three files that must never disagree.
+ */
+const DEVICE_CODE_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
+
+/**
  * Canonical identifier of the OAuth-protected MCP resource: the audience minted into every access
  * token (RFC 8707) and validated by the middleware. Derived in one place so the signer and the
  * verifier cannot drift. Matches the server route registered in novamira.php and advertised by the
@@ -117,7 +123,12 @@ function boot(): void
     require_once __DIR__ . '/repositories/refresh-token-repository.php';
     require_once __DIR__ . '/repositories/scope-repository.php';
     require_once __DIR__ . '/repositories/user-repository.php';
+    require_once __DIR__ . '/repositories/device-code-repository.php';
     require_once __DIR__ . '/keys.php';
+    // The device endpoint carries the shared code constants, so it is loaded before the factory
+    // that reads the polling interval, not with the other REST routes below.
+    require_once __DIR__ . '/endpoints/device.php';
+    require_once __DIR__ . '/grants/device-code-grant.php';
     require_once __DIR__ . '/server-factory.php';
     require_once __DIR__ . '/bridge.php';
 
@@ -136,6 +147,8 @@ function boot(): void
     require_once __DIR__ . '/endpoints/token.php';
     add_action('rest_api_init', __NAMESPACE__ . '\\Endpoints\\Token\\register');
 
+    add_action('rest_api_init', __NAMESPACE__ . '\\Endpoints\\Device\\register');
+
     require_once __DIR__ . '/middleware.php';
     Middleware\register();
 
@@ -147,6 +160,10 @@ function boot(): void
 
     require_once __DIR__ . '/consent.php';
     add_action('admin_menu', __NAMESPACE__ . '\\Consent\\register');
+
+    // The device verification page reuses the consent disclosure, so it loads after consent.php.
+    require_once __DIR__ . '/device-verification.php';
+    add_action('admin_menu', __NAMESPACE__ . '\\DeviceVerification\\register');
 
     require_once __DIR__ . '/connected-apps.php';
     add_action('admin_menu', __NAMESPACE__ . '\\ConnectedApps\\register');

@@ -39,6 +39,7 @@ function novamira_uninstall_tables(): array
         $wpdb->prefix . 'novamira_oauth_clients',
         $wpdb->prefix . 'novamira_oauth_auth_codes',
         $wpdb->prefix . 'novamira_oauth_access_tokens',
+        $wpdb->prefix . 'novamira_oauth_device_codes',
         $wpdb->prefix . 'novamira_oauth_refresh_tokens',
     ];
 }

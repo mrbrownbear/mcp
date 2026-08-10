@@ -47,10 +47,38 @@ function is_self_test_request(WP_REST_Request $req): bool
     return $found === '1' || $found === 1;
 }
 
-// @mago-expect lint:cyclomatic-complexity
-function handle(WP_REST_Request $req): WP_REST_Response|WP_Error
+/**
+ * RFC 7591 requires redirect_uris only for grants that redirect. A device client never does — that
+ * is the whole point of the grant — so it registers without one, and having none is also what keeps
+ * it out of the authorization-code flow.
+ */
+function register_device_client(string $client_name, string $client_ip): WP_REST_Response
 {
-    $client_ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    $grants = [\Novamira\OAuth\DEVICE_CODE_GRANT_TYPE, 'refresh_token'];
+    $client_id = (new ClientRepository())->create(
+        $client_name,
+        [],
+        $client_ip,
+        admin_created: false,
+        grant_types: $grants,
+    );
+
+    return new WP_REST_Response([
+        'client_id' => $client_id,
+        'client_name' => $client_name,
+        'redirect_uris' => [],
+        'token_endpoint_auth_method' => 'none',
+        'grant_types' => $grants,
+        'response_types' => [],
+    ], 201);
+}
+
+/**
+ * Per-IP and per-site limits on anonymous registration, applied before anything is written. Returns
+ * the refusal to send, or null when the registration may proceed.
+ */
+function registration_refusal(WP_REST_Request $req, string $client_ip): ?WP_Error
+{
     ClientValidation\prune_dead_clients();
     $self_test = is_self_test_request($req);
     if ($client_ip !== '' && !$self_test && !ClientValidation\check_and_increment_rate_limit($client_ip)) {
@@ -68,12 +96,33 @@ function handle(WP_REST_Request $req): WP_REST_Response|WP_Error
     if (ClientValidation\active_client_count() >= ClientValidation\max_clients_per_site()) {
         return new WP_Error('cap_reached', 'Client cap reached', ['status' => 503]);
     }
+    return null;
+}
+
+// @mago-expect lint:cyclomatic-complexity
+function handle(WP_REST_Request $req): WP_REST_Response|WP_Error
+{
+    $client_ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    $refusal = registration_refusal($req, $client_ip);
+    if ($refusal !== null) {
+        return $refusal;
+    }
 
     $body = $req->get_json_params();
     // @mago-expect analysis:mixed-assignment
     $client_name = sanitize_text_field(trim((string) ($body['client_name'] ?? '')));
     if ($client_name === '' || strlen($client_name) > 191) {
         return new WP_Error('invalid_request', 'client_name must be 1..191 chars', ['status' => 400]);
+    }
+
+    // @mago-expect analysis:mixed-assignment
+    $requested_grants = $body['grant_types'] ?? null;
+    $device_client =
+        is_array($requested_grants)
+        && in_array(\Novamira\OAuth\DEVICE_CODE_GRANT_TYPE, $requested_grants, strict: true);
+
+    if ($device_client) {
+        return register_device_client($client_name, $client_ip);
     }
 
     // @mago-expect analysis:mixed-assignment

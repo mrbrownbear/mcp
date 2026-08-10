@@ -122,6 +122,20 @@ function handle(): void
         return;
     }
 
+    // A device client registers no redirect URI, so it can never complete this flow. Say so plainly
+    // instead of reporting an unregistered redirect_uri, which reads as a misconfiguration.
+    if ($client->getRedirectUri() === [] || $client->getRedirectUri() === '') {
+        wp_die(
+            esc_html__(
+                'This application is registered for device authorization. Approve it under Authorize Device instead.',
+                domain: 'novamira',
+            ),
+            title: '',
+            args: ['response' => 400],
+        );
+        return;
+    }
+
     // RFC 8252 §7.3: a native/desktop client binds an ephemeral loopback port that can differ from
     // the one it registered, so league's validator matches 127.0.0.1/[::1] ignoring the port (and
     // requires an exact match otherwise). This is the same check league runs at the consent step, so

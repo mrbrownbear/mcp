@@ -12,10 +12,13 @@ use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Grant\AuthCodeGrant;
 use League\OAuth2\Server\Grant\RefreshTokenGrant;
 use League\OAuth2\Server\ResourceServer;
+use Novamira\OAuth\Endpoints\Device;
+use Novamira\OAuth\Grants\DeviceCodeGrant;
 use Novamira\OAuth\Keys;
 use Novamira\OAuth\Repositories\AccessTokenRepository;
 use Novamira\OAuth\Repositories\AuthCodeRepository;
 use Novamira\OAuth\Repositories\ClientRepository;
+use Novamira\OAuth\Repositories\DeviceCodeRepository;
 use Novamira\OAuth\Repositories\RefreshTokenRepository;
 use Novamira\OAuth\Repositories\ScopeRepository;
 
@@ -47,6 +50,12 @@ function build_authorization_server(): AuthorizationServer
     $refreshGrant = new RefreshTokenGrant(new RefreshTokenRepository());
     $refreshGrant->setRefreshTokenTTL(new DateInterval('P14D'));
     $server->enableGrantType($refreshGrant, new DateInterval('PT1H'));
+
+    // RFC 8628, for clients whose browser cannot reach them (a shell over SSH, a container).
+    // Same tokens, same lifetimes: only the way the operator approves differs.
+    $deviceGrant = new DeviceCodeGrant(new DeviceCodeRepository(), new RefreshTokenRepository(), Device\POLL_INTERVAL);
+    $deviceGrant->setRefreshTokenTTL(new DateInterval('P14D'));
+    $server->enableGrantType($deviceGrant, new DateInterval('PT1H'));
 
     return $server;
 }
