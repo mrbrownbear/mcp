@@ -1,5 +1,6 @@
 * New: The Configuration page now asks for the AI client before the authentication method, shows every supported client, and explains technically why an authentication method or cloud-only client cannot work in the current environment.
 * New: Novamira detects Kinsta, WP Engine, Hostinger, SiteGround, Pantheon, and Cloudflare security layers that may classify direct connections from cloud AI clients as bot traffic. Application Password is recommended where appropriate, while OAuth remains available with a dismissible technical warning and an editable support email template.
+* New: A dedicated Manage Connections page brings OAuth connected apps and Novamira Application Passwords together, with their usage details and revoke actions.
 * New: Command-line tools can sign in with a device code when their browser runs on another machine, such as a shell reached over SSH or inside a container. The tool shows a short code, and you approve it from any device where you are signed in to this site. Only approve a code you started yourself.
 * Tweak: Codex in ChatGPT Desktop and Codex CLI now have separate setup instructions, and the consumer Gemini CLI entry has moved to Antigravity CLI with its current MCP configuration format.
 * Fix: Claude Code connection commands now register the MCP server globally for the current user.

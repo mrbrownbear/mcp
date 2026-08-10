@@ -307,9 +307,9 @@ function novamira_handle_create_password()
 
 /**
  * Handle the revoke-password form submission. Redirects on success.
- * Called from admin_init so headers have not been sent yet.
+ * Called before admin HTML from admin_init or the Connections page load hook.
  */
-function novamira_handle_revoke_password(): void
+function novamira_handle_revoke_password(string $redirect_page = 'novamira-connect'): void
 {
     if (($_POST['novamira_revoke_password'] ?? null) === null) {
         return;
@@ -329,7 +329,7 @@ function novamira_handle_revoke_password(): void
     $user_id = get_current_user_id();
     WP_Application_Passwords::delete_application_password($user_id, $uuid);
 
-    wp_safe_redirect(admin_url('admin.php?page=novamira-connect&novamira_result=revoked'));
+    wp_safe_redirect(admin_url('admin.php?page=' . $redirect_page . '&novamira_result=revoked'));
     exit();
 }
 
@@ -760,12 +760,8 @@ function novamira_render_method_chooser(
         </div>
     <?php endif; ?>
 
-    <div class="novamira-method-panel" data-panel="oauth" hidden>
-        <?php novamira_render_oauth_panel(); ?>
-    </div>
     <div class="novamira-method-panel" data-panel="password"<?php echo $password_active ? '' : ' hidden'; ?>>
         <?php novamira_render_password_step($new_password, $existing_password, $existing_error); ?>
-        <?php novamira_render_manage_passwords_section(); ?>
     </div>
 
     <noscript>
@@ -821,26 +817,6 @@ function novamira_password_method_preselected(
     ?WP_Error $existing_error,
 ): bool {
     return $new_password !== null || $existing_password !== null || $existing_error !== null;
-}
-
-/**
- * Render the OAuth method panel (Step 3). OAuth has no setup action of its own: the per-client
- * connect instructions live in Step 4 (novamira_render_oauth_config_section), so this panel only
- * links to the connected-apps manager.
- */
-function novamira_render_oauth_panel(): void
-{
-    if (!novamira_oauth_transport_allowed()) {
-        return;
-    }
-    $connected_apps_url = admin_url('admin.php?page=novamira-connected-apps');
-    ?>
-    <p class="description" style="margin:0;">
-        <a href="<?php echo esc_url($connected_apps_url); ?>">
-            <?php esc_html_e('Manage connected apps', domain: 'novamira'); ?>
-        </a>
-    </p>
-    <?php
 }
 
 /**
@@ -1445,67 +1421,6 @@ function novamira_render_password_step(
             </p>
         </form>
     </div>
-    <?php
-}
-
-/**
- * Render the "Manage existing application passwords" collapsible section at the bottom of the page.
- *
- * Only meaningful when at least one Novamira-tagged password exists. Hosts the list with revoke
- * buttons. Used both when AI Abilities are enabled (revoke + create lives elsewhere) and when
- * disabled (revoke only).
- */
-function novamira_render_manage_passwords_section(string $context = 'enabled'): void
-{
-    $mcp_passwords = novamira_get_mcp_passwords();
-    if ($mcp_passwords === []) {
-        return;
-    }
-
-    $dt_format = novamira_get_datetime_format('Y-m-d H:i');
-    $count = count($mcp_passwords);
-    $open_by_default = $count <= 3;
-    /* translators: %d: count of existing application passwords */
-    $summary = sprintf(
-        _n(
-            single: 'Manage existing application password (%d)',
-            plural: 'Manage existing application passwords (%d)',
-            number: $count,
-            domain: 'novamira',
-        ),
-        $count,
-    );
-    ?>
-    <details class="novamira-manage-passwords"<?php echo $open_by_default ? ' open' : ''; ?>>
-        <summary class="novamira-manage-passwords-summary">
-            <?php echo esc_html($summary); ?>
-        </summary>
-        <div class="novamira-manage-passwords-body">
-            <?php if ($context === 'disabled'): ?>
-                <p class="description" style="margin:0 0 12px;">
-                    <?php esc_html_e(
-                        'AI Abilities are disabled. These credentials remain valid for WordPress authentication, but the Novamira MCP endpoint will reject requests until AI Abilities are turned back on.',
-                        domain: 'novamira',
-                    ); ?>
-                </p>
-            <?php endif; ?>
-            <table class="wp-list-table widefat fixed striped">
-                <thead>
-                    <tr>
-                        <th><?php esc_html_e('Name', domain: 'novamira'); ?></th>
-                        <th style="width:180px;"><?php esc_html_e('Created', domain: 'novamira'); ?></th>
-                        <th style="width:180px;"><?php esc_html_e('Last Used', domain: 'novamira'); ?></th>
-                        <th style="width:80px;"><?php esc_html_e('Actions', domain: 'novamira'); ?></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($mcp_passwords as $pw): ?>
-                        <?php novamira_render_password_row($pw, $dt_format); ?>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </details>
     <?php
 }
 
@@ -2753,6 +2668,7 @@ function novamira_render_connect_page(): void
             margin: 0 0 20px;
             box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03);
         }
+        .novamira-connect-header-end { margin-bottom: 16px; }
         .novamira-step-heading {
             display: flex;
             align-items: center;
@@ -2950,39 +2866,22 @@ function novamira_render_connect_page(): void
             background: #fff;
             border-top: 1px solid #c3c4c7;
         }
-        .novamira-panel-footer,
-        .novamira-manage-passwords {
+        .novamira-panel-footer {
             margin: 20px 0 0;
             border-top: 1px solid #e0e0e0;
             padding-top: 16px;
-        }
-        .novamira-manage-passwords-summary {
-            font-weight: 600;
-            cursor: pointer;
-            list-style: none;
-            color: #1d2327;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 4px 0;
-        }
-        .novamira-manage-passwords-summary::-webkit-details-marker { display: none; }
-        .novamira-manage-passwords-summary::before {
-            content: '▸';
-            color: #646970;
-            transition: transform 0.15s;
-        }
-        .novamira-manage-passwords[open] .novamira-manage-passwords-summary::before {
-            transform: rotate(90deg);
-        }
-        .novamira-manage-passwords-body {
-            padding-top: 12px;
         }
     </style>
 
     <?php novamira_render_admin_header(); ?>
     <div class="wrap">
-        <h1><?php esc_html_e('Configuration', domain: 'novamira'); ?></h1>
+        <h1 class="wp-heading-inline"><?php esc_html_e('Configuration', domain: 'novamira'); ?></h1>
+        <a
+            class="page-title-action"
+            style="margin-left:12px;"
+            href="<?php echo esc_url(admin_url('admin.php?page=novamira-connections')); ?>"
+        ><?php esc_html_e('Manage Connections', domain: 'novamira'); ?></a>
+        <hr class="wp-header-end novamira-connect-header-end" />
 
         <?php novamira_render_mcp_dependency_inline_notice($mcp_dependency_error); ?>
 
@@ -3041,10 +2940,6 @@ function novamira_render_connect_page(): void
                 </p>
             </div>
         <?php endif; ?>
-        <?php if (!$mcp_ready && novamira_get_mcp_passwords() !== []): ?>
-            <?php novamira_render_manage_passwords_section(context: 'disabled'); ?>
-        <?php endif; ?>
-
     </div>
 
     <script>

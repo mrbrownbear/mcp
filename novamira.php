@@ -140,7 +140,7 @@ function novamira_render_mcp_dependency_notice(): void
         is_string($page)
         && in_array(
             $page,
-            ['novamira-connect', 'novamira-abilities', 'novamira-chat', 'novamira-sandbox'],
+            ['novamira-connect', 'novamira-connections', 'novamira-abilities', 'novamira-chat', 'novamira-sandbox'],
             strict: true,
         )
     ) {
@@ -231,6 +231,10 @@ require_once __DIR__ . '/includes/updater.php';
 require_once __DIR__ . '/includes/admin-page.php';
 require_once __DIR__ . '/includes/hosting/detector.php';
 require_once __DIR__ . '/includes/connect-page.php';
+require_once __DIR__ . '/includes/oauth/connections.php';
+add_action('admin_menu', callback: static function (): void {
+    \Novamira\OAuth\Connections\register();
+});
 require_once __DIR__ . '/includes/pro-upsell.php';
 require_once __DIR__ . '/includes/upload-link.php';
 require_once __DIR__ . '/includes/admin-access-link.php';

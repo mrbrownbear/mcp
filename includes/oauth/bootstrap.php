@@ -164,9 +164,6 @@ function boot(): void
     // The device verification page reuses the consent disclosure, so it loads after consent.php.
     require_once __DIR__ . '/device-verification.php';
     add_action('admin_menu', __NAMESPACE__ . '\\DeviceVerification\\register');
-
-    require_once __DIR__ . '/connected-apps.php';
-    add_action('admin_menu', __NAMESPACE__ . '\\ConnectedApps\\register');
 }
 
 add_action('plugins_loaded', __NAMESPACE__ . '\\boot', priority: 20);

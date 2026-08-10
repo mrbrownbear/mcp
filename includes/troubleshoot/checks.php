@@ -917,7 +917,7 @@ function check_limits(): array
                 $active,
                 $cap,
             ),
-            __('Revoke unused connections from the Connected Apps page.', domain: 'novamira'),
+            __('Revoke unused connections from the Connections page.', domain: 'novamira'),
         );
     }
     if ($pending >= 5) {

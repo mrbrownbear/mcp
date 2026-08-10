@@ -133,7 +133,7 @@ function render_panel(string $context, string $method = '', bool $with_method_pi
                     </p>
                     <p class="description" data-novamira-ts="mint-hint"></p>
                     <p class="description"><?php esc_html_e(
-                        'This ID stays valid until it is used (or deleted from Connected Apps, where it is listed as manually created).',
+                        'This ID stays valid until it is used (or deleted from Connections, where it is listed as manually created).',
                         domain: 'novamira',
                     ); ?></p>
                 </div>
@@ -149,7 +149,7 @@ function render_panel(string $context, string $method = '', bool $with_method_pi
 
             <div class="novamira-ts-branch" data-novamira-ts-branch="was-working" hidden>
                 <p><?php esc_html_e(
-                    'A connection that stops with 401 usually means one of: the permalink structure changed (the token audience changes with it — most clients recover on their own at the next refresh, otherwise reconnect once), the access was revoked from Connected Apps, or the site moved to plain HTTP (which disables the OAuth endpoints entirely). The checks above cover the last case.',
+                    'A connection that stops with 401 usually means one of: the permalink structure changed (the token audience changes with it — most clients recover on their own at the next refresh, otherwise reconnect once), the access was revoked from Connections, or the site moved to plain HTTP (which disables the OAuth endpoints entirely). The checks above cover the last case.',
                     domain: 'novamira',
                 ); ?></p>
             </div>

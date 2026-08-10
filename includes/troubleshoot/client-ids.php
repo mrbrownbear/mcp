@@ -45,7 +45,7 @@ function registry(): array
  * client_id to paste into the AI client. Runs in wp-admin on behalf of an administrator, so the
  * anonymous-DCR rate limits and per-IP caps deliberately do not apply; the row is flagged
  * admin_created, which exempts it from the 24h pending prune (it lives until first use or manual
- * deletion from Connected Apps).
+ * deletion from Connections).
  *
  * @return array{client_id: string, label: string, field_hint: string}|WP_Error
  */

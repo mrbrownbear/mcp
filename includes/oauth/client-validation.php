@@ -260,7 +260,7 @@ function client_count_for_ip(string $client_ip): int
 /**
  * Delete clients that no longer hold a live grant so they stop occupying connection slots: pending
  * registrations that never completed a token exchange (older than STALE_UNUSED_CLIENT_TTL, except
- * admin-created client IDs, which stay until used or deleted from Connected Apps), and clients not
+ * admin-created client IDs, which stay until used or deleted from Connections), and clients not
  * used within the refresh-token lifetime (their tokens have all expired or been revoked).
  */
 // @mago-expect lint:no-global
