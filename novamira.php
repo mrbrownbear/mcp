@@ -7,13 +7,13 @@ declare(strict_types=1);
 
 /**
  * Plugin Name: Novamira
- * Plugin URI: https://www.novamira.ai
+ * Plugin URI: https://novamira.ai
  * Description: MCP server that gives AI agents full access to WordPress through PHP execution and filesystem operations. For development and staging environments only.
  * Version: 1.11.2
  * Requires at least: 6.9
  * Requires PHP: 8.0
  * Author: Dynamic.ooo
- * Author URI: https://www.novamira.ai
+ * Author URI: https://novamira.ai
  * License: AGPL-3.0-or-later
  * License URI: https://www.gnu.org/licenses/agpl-3.0.html
  * Text Domain: novamira

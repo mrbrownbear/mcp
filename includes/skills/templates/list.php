@@ -418,7 +418,7 @@ $new_url = add_query_arg(['page' => Admin\PAGE_SLUG, 'skill' => 'new'], admin_ur
                         domain: 'novamira',
                     ),
                     esc_html($group['label']),
-                    '<a href="https://www.novamira.ai/pro/?utm_source=plugin&utm_medium=skills" target="_blank" rel="noopener">',
+                    '<a href="https://novamira.ai/pro/?utm_source=plugin&utm_medium=skills" target="_blank" rel="noopener">',
                     '</a>',
                 );
                 ?>

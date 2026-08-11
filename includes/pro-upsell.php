@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
     exit();
 }
 
-const NOVAMIRA_PRO_URL = 'https://www.novamira.ai/pro/';
+const NOVAMIRA_PRO_URL = 'https://novamira.ai/pro/';
 
 const NOVAMIRA_PRO_DISMISS_PREFIX = 'novamira_pro_dismissed_';
 
