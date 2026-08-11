@@ -1067,13 +1067,27 @@ function novamira_build_building_context_lines(): array
  */
 function novamira_build_server_instructions()
 {
+    $current_user = wp_get_current_user();
     $lines = [
         'Novamira gives you unrestricted control over this WordPress installation.',
+        '',
+        '## Connection safety',
+        '',
+        'IMPORTANT: Never update, replace, modify, deactivate, uninstall, or delete the Novamira plugin itself, because doing so would interrupt the connection you are currently using.',
+    ];
+    if ($current_user->ID > 0) {
+        $lines[] =
+            'You are connected through WordPress user ID '
+            . $current_user->ID
+            . '. Be careful when modifying this user or its authentication credentials: never revoke or delete its Novamira OAuth connections or Novamira WordPress Application Passwords, because doing so may interrupt the connection you are currently using.';
+    }
+
+    $lines = array_merge($lines, [
         '',
         '## Environment',
         '',
         'WordPress ' . get_bloginfo('version') . ' — PHP ' . PHP_VERSION . ' — Locale: ' . get_locale(),
-    ];
+    ]);
 
     // Detect active languages from multilingual plugins.
     $multilingual = novamira_get_active_languages();

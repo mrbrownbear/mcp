@@ -5,6 +5,7 @@
 * New: Before deactivation, Novamira warns when sandbox files may be powering site functionality, provides a copyable prompt for moving them to persistent storage, and lets administrators choose whether uninstall should remove OAuth data and revoke Novamira Application Passwords across all users.
 * Tweak: Codex in ChatGPT Desktop and Codex CLI now have separate setup instructions, and the consumer Gemini CLI entry has moved to Antigravity CLI with its current MCP configuration format.
 * Tweak: simplify troubleshooting for blocked OAuth connections.
+* Tweak: AI clients now receive the WordPress user ID behind their connection and are warned not to modify Novamira or revoke the credentials keeping that connection active.
 * Fix: Claude Code connection commands now register the MCP server globally for the current user.
 * Fix: The Block Editor Queue no longer fails every batch with a "Blocked a frame with origin ... from accessing a cross-origin frame" error. When the hidden block editor iframe cannot be read, the queue now serializes with the block runtime of the queue page itself and reports why the iframe was unavailable, instead of failing the batch.
 
