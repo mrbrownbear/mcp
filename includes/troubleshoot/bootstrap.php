@@ -14,7 +14,6 @@ if (!defined('ABSPATH')) {
 }
 
 require_once __DIR__ . '/checks.php';
-require_once __DIR__ . '/client-ids.php';
 require_once __DIR__ . '/rest.php';
 require_once __DIR__ . '/ui.php';
 require_once __DIR__ . '/notice.php';

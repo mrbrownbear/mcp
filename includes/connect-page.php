@@ -560,21 +560,32 @@ function novamira_render_ai_client_chooser(): void
 /**
  * Build the editable message offered when the detected hosting may filter AI client traffic.
  */
-function novamira_hosting_support_email(): string
+function novamira_hosting_support_email(string $authentication_context = 'both'): string
 {
     $site_url = home_url('/');
     $protected_resource_url = home_url('/.well-known/oauth-protected-resource');
     $current_user_url = rest_url('wp/v2/users/me');
+    $failure_description = match ($authentication_context) {
+        'oauth' => __(
+            'The affected AI client only supports OAuth, and its connection is currently failing before the request reaches WordPress.',
+            domain: 'novamira',
+        ),
+        default => __(
+            'Those clients authenticate in one of two ways, either with OAuth or with a WordPress Application Password, and both are currently failing before the request reaches WordPress.',
+            domain: 'novamira',
+        ),
+    };
 
     return sprintf(
-        /* translators: 1: site URL, 2: OAuth protected-resource URL, 3: current-user REST URL */
+        /* translators: 1: site URL, 2: OAuth protected-resource URL, 3: current-user REST URL, 4: description of the failing authentication method */
         __(
-            "Hello,\n\nMy WordPress site at %1\$s runs a plugin called Novamira (novamira.ai), which lets AI clients such as Claude and ChatGPT connect to the site over the WordPress REST API. The connection is direct between the AI client and my site: the plugin is installed on my own WordPress, and nothing passes through any Novamira server. Those clients authenticate in one of two ways, either with OAuth or with a WordPress Application Password, and both are currently failing before the request reaches WordPress. I have verified the WordPress side already: the REST API answers, the endpoints are installed, and the site responds correctly to requests made from the server itself. The requests that fail are the ones arriving from outside, from datacenter addresses and with non-browser user agents, which is exactly what an AI client sends.\n\nThere are three things I would ask you to check for my site.\n\nFirst, the Authorization header must reach PHP rather than being stripped by the web server or the proxy. WordPress Application Passwords are sent as HTTP Basic authentication and OAuth tokens as a Bearer header, so if that header is removed, every authenticated request is seen by WordPress as anonymous and the connection fails with a permission error. On Apache this usually means passing HTTP_AUTHORIZATION through, and on nginx or a proxy layer it means not dropping the header.\n\nSecond, these paths need to pass through to WordPress as dynamic requests, without page caching, without redirects to the homepage and without bot challenges: the whole REST API path /wp-json/ and its subpaths, plus /.well-known/oauth-authorization-server and /.well-known/oauth-protected-resource, including any subpath of those two. To be concrete about the traffic involved, the AI client connects to /wp-json/mcp/novamira-oauth when it authenticates with OAuth and to /wp-json/mcp/novamira when it uses an Application Password, and the OAuth sign-in itself also calls /wp-json/novamira/v1/oauth/. I am asking for the whole /wp-json/ path rather than only those, because the REST prefix changes on subdirectory installs and on sites using plain permalinks.\n\nThird, if a CDN, WAF or bot protection sits in front of the site, please allow this traffic by path rather than by user agent, since these clients do not present a browser signature and connect from datacenter IP ranges. Every other protection on the site can stay exactly as it is.\n\nIf it helps your investigation, two quick tests: a plain GET to %2\$s should return application/json with HTTP 200, and a GET to %3\$s sent with HTTP Basic credentials should return the user rather than a 401. Anything else, a redirect, an HTML page, a 403 or a challenge page, is the failure I am reporting.\n\nIf your team would like to reproduce the behaviour on your own infrastructure, the free version of the plugin can be downloaded at no cost from novamira.ai and installed on any test site on your platform. It ships a Troubleshoot page that runs these same checks and prints exactly which layer is answering, which may be quicker than working from my description alone.\n\nThank you for your help.",
+            "Hello,\n\nMy WordPress site at %1\$s runs a plugin called Novamira (novamira.ai), which lets AI clients such as Claude and ChatGPT connect to the site over the WordPress REST API. The connection is direct between the AI client and my site: the plugin is installed on my own WordPress, and nothing passes through any Novamira server. %4\$s I have verified the WordPress side already: the REST API answers, the endpoints are installed, and the site responds correctly to requests made from the server itself. The requests that fail are the ones arriving from outside, from datacenter addresses and with non-browser user agents, which is exactly what an AI client sends. Claude.ai, for example, can send these server-to-server requests from Anthropic infrastructure using a generic Python HTTP client signature such as python-httpx. A firewall can therefore classify them as automated bot traffic even though they are legitimate requests from the AI client.\n\nThere are three things I would ask you to check for my site.\n\nFirst, the Authorization header must reach PHP rather than being stripped by the web server or the proxy. WordPress Application Passwords are sent as HTTP Basic authentication and OAuth tokens as a Bearer header, so if that header is removed, every authenticated request is seen by WordPress as anonymous and the connection fails with a permission error. On Apache this usually means passing HTTP_AUTHORIZATION through, and on nginx or a proxy layer it means not dropping the header.\n\nSecond, these paths need to pass through to WordPress as dynamic requests, without page caching, without redirects to the homepage and without bot challenges: the whole REST API path /wp-json/ and its subpaths, plus /.well-known/oauth-authorization-server and /.well-known/oauth-protected-resource, including any subpath of those two. To be concrete about the traffic involved, the AI client connects to /wp-json/mcp/novamira-oauth when it authenticates with OAuth and to /wp-json/mcp/novamira when it uses an Application Password, and the OAuth sign-in itself also calls /wp-json/novamira/v1/oauth/. I am asking for the whole /wp-json/ path rather than only those, because the REST prefix changes on subdirectory installs and on sites using plain permalinks.\n\nThird, if a CDN, WAF or bot protection sits in front of the site, please allow this traffic by path rather than by user agent, since these clients do not present a browser signature and connect from datacenter IP ranges. Every other protection on the site can stay exactly as it is.\n\nIf it helps your investigation, two quick tests: a plain GET to %2\$s should return application/json with HTTP 200, and a GET to %3\$s sent with HTTP Basic credentials should return the user rather than a 401. Anything else, a redirect, an HTML page, a 403 or a challenge page, is the failure I am reporting.\n\nIf your team would like to reproduce the behaviour on your own infrastructure, the free version of the plugin can be downloaded at no cost from novamira.ai and installed on any test site on your platform. It ships a Troubleshoot page that runs these same checks and prints exactly which layer is answering, which may be quicker than working from my description alone.\n\nThank you for your help.",
             domain: 'novamira',
         ),
         $site_url,
         $protected_resource_url,
         $current_user_url,
+        $failure_description,
     );
 }
 
@@ -701,7 +712,7 @@ function novamira_render_method_chooser(
             <p><?php printf(
                 /* translators: 1: detected hosting provider name, 2: detected edge/security layer name */
                 esc_html__(
-                    'Novamira detected %1$s, which places %2$s in front of WordPress. Novamira does not relay or proxy the connection: the AI client opens it directly to this site. With Claude.ai, for example, the request originates on Anthropic servers and often uses a generic Python HTTP signature such as python-httpx. The hosting security layer can therefore classify this legitimate server-to-server request as bot traffic and block or challenge it before WordPress or PHP receives it.',
+                    'Novamira is direct by design: no credentials, site content, or requests pass through Novamira servers. With OAuth, the AI client opens the connection directly to this site. On Claude.ai, for example, the request originates on Anthropic servers and often uses a generic Python HTTP signature such as python-httpx. Novamira detected %1$s, which places %2$s in front of WordPress; that security layer can classify this legitimate server-to-server request as bot traffic and block or challenge it before WordPress or PHP receives it.',
                     domain: 'novamira',
                 ),
                 esc_html($hosting_name),
@@ -710,7 +721,7 @@ function novamira_render_method_chooser(
             <p><?php printf(
                 /* translators: %s: detected hosting provider name */
                 esc_html__(
-                    'Application Password avoids OAuth discovery and dynamic client registration for clients that support it, but it does not proxy or disguise their traffic. Claude.ai only supports OAuth, so for Claude.ai the solution is to contact %s support and ask them to allow legitimate machine-to-machine requests from Anthropic to /.well-known/oauth-* and /wp-json/ without browser or bot challenges.',
+                    'For clients that support it, Application Password uses the local @automattic/mcp-wordpress-remote bridge launched by npx. It contacts WordPress from the environment where the AI client runs instead of from the AI provider’s cloud infrastructure, avoiding this type of bot classification. The bridge is not a Novamira service, and the traffic still never passes through Novamira servers. Claude.ai only supports OAuth, so for Claude.ai the solution is to contact %s support and ask them to allow legitimate machine-to-machine requests from Anthropic to /.well-known/oauth-* and /wp-json/ without browser or bot challenges.',
                     domain: 'novamira',
                 ),
                 esc_html($hosting_name),

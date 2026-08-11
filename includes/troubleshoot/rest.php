@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 namespace Novamira\Troubleshoot\Rest;
 
-use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 
@@ -23,12 +22,6 @@ function register_routes(): void
         'methods' => 'POST',
         'permission_callback' => $permission,
         'callback' => __NAMESPACE__ . '\\run_checks',
-    ]);
-
-    register_rest_route('novamira/v1', route: '/troubleshoot/client-id', args: [
-        'methods' => 'POST',
-        'permission_callback' => $permission,
-        'callback' => __NAMESPACE__ . '\\client_id',
     ]);
 }
 
@@ -55,15 +48,4 @@ function run_checks(WP_REST_Request $req): WP_REST_Response
         'layers' => $layers,
         'report' => \Novamira\Troubleshoot\Checks\build_support_report($meta, $layers, $checks),
     ]);
-}
-
-function client_id(WP_REST_Request $req): WP_REST_Response|WP_Error
-{
-    // @mago-expect analysis:mixed-assignment
-    $raw = $req->get_json_params()['client'] ?? null;
-    $result = \Novamira\Troubleshoot\ClientIds\generate(is_string($raw) ? $raw : '');
-    if (is_wp_error($result)) {
-        return $result;
-    }
-    return new WP_REST_Response($result, 201);
 }

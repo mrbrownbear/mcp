@@ -26,12 +26,14 @@ if (!defined('ABSPATH')) {
 function render_panel(string $context, string $method = '', bool $with_method_picker = false): void
 {
     $prefix = 'novamira-ts-' . sanitize_html_class($context);
-    $registry = \Novamira\Troubleshoot\ClientIds\registry();
     // Each symptom applies to one method (or both); the picker hides the rest.
     $symptoms = [
         'registration' => [
             'method' => 'oauth',
-            'label' => __('My AI client shows a registration or sign-in service error', domain: 'novamira'),
+            'label' => __(
+                '“Couldn’t register with [connection name]’s sign-in service. You can try again, or add an OAuth Client ID in the connector settings. If this persists, share this reference with support: ofid_…”',
+                domain: 'novamira',
+            ),
         ],
         'login-loop' => [
             'method' => 'oauth',
@@ -106,38 +108,62 @@ function render_panel(string $context, string $method = '', bool $with_method_pi
             </select>
 
             <div class="novamira-ts-branch" data-novamira-ts-branch="registration" hidden>
-                <p><?php esc_html_e(
-                    'Registration is the automatic first step where the AI client creates its own OAuth client on this site. When it fails while the checks above pass, the requests from the AI client\'s servers are being blocked or rate-limited before they reach WordPress. You can skip that step entirely: mint a client ID here and paste it into the AI client.',
+                <h3><?php esc_html_e('Choose the fix your AI client supports', domain: 'novamira'); ?></h3>
+                <div class="novamira-ts-fix-options">
+                    <div class="novamira-ts-fix-option is-recommended">
+                        <h4><?php esc_html_e('Use Application Password', domain: 'novamira'); ?></h4>
+                        <p><?php esc_html_e(
+                            'Choose this when it is available for your AI client. Its local bridge avoids requests coming from the AI provider’s cloud servers.',
+                            domain: 'novamira',
+                        ); ?></p>
+                        <a
+                            class="button button-primary"
+                            href="<?php echo esc_url(admin_url('admin.php?page=novamira-connect')); ?>"
+                        ><?php esc_html_e('Set up Application Password', domain: 'novamira'); ?></a>
+                    </div>
+                    <div class="novamira-ts-fix-option">
+                        <h4><?php esc_html_e('OAuth only? Contact hosting support', domain: 'novamira'); ?></h4>
+                        <p><?php esc_html_e(
+                            'Claude.ai only supports OAuth. Ask your hosting provider or CDN to allow the AI provider’s traffic to /.well-known/oauth-* and /wp-json/ without bot filtering.',
+                            domain: 'novamira',
+                        ); ?></p>
+                        <details class="novamira-ts-support-email">
+                            <summary><?php esc_html_e('Show email template', domain: 'novamira'); ?></summary>
+                            <label><strong><?php esc_html_e('Subject', domain: 'novamira'); ?></strong>
+                                <input
+                                    type="text"
+                                    class="large-text"
+                                    data-novamira-ts="support-subject"
+                                    value="<?php echo
+                                        esc_attr__(
+                                            'Request to allow AI client connections over the WordPress REST API',
+                                            domain: 'novamira',
+                                        )
+                                    ; ?>"
+                                />
+                            </label>
+                            <label><strong><?php esc_html_e('Message', domain: 'novamira'); ?></strong>
+                                <textarea
+                                    class="large-text code"
+                                    rows="12"
+                                    data-novamira-ts="support-message"
+                                ><?php echo esc_textarea(\novamira_hosting_support_email('oauth')); ?></textarea>
+                            </label>
+                            <button
+                                type="button"
+                                class="button"
+                                data-novamira-ts="support-copy"
+                            ><?php esc_html_e('Copy email', domain: 'novamira'); ?></button>
+                        </details>
+                    </div>
+                </div>
+                <p class="novamira-ts-direct-design"><strong><?php esc_html_e(
+                    'Why this can happen:',
+                    domain: 'novamira',
+                ); ?></strong> <?php esc_html_e(
+                    'Novamira never routes the connection through its own servers. With cloud OAuth clients, your hosting sees the AI provider’s traffic directly and may mistake it for a bot.',
                     domain: 'novamira',
                 ); ?></p>
-                <p class="novamira-ts-mint-controls">
-                    <select data-novamira-ts="client">
-                        <?php foreach ($registry as $key => $entry): ?>
-                            <option value="<?php echo esc_attr($key); ?>"><?php echo
-                                esc_html($entry['label'])
-                            ; ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    <button type="button" class="button" data-novamira-ts="mint"><?php esc_html_e(
-                        'Generate Auth Client ID',
-                        domain: 'novamira',
-                    ); ?></button>
-                </p>
-                <div data-novamira-ts="mint-result" hidden>
-                    <p class="novamira-ts-mint-row">
-                        <code class="novamira-ts-mint-id" data-novamira-ts="mint-id"></code>
-                        <button type="button" class="button" data-novamira-ts="mint-copy"><?php esc_html_e(
-                            'Copy',
-                            domain: 'novamira',
-                        ); ?></button>
-                    </p>
-                    <p class="description" data-novamira-ts="mint-hint"></p>
-                    <p class="description"><?php esc_html_e(
-                        'This ID stays valid until it is used (or deleted from Connections, where it is listed as manually created).',
-                        domain: 'novamira',
-                    ); ?></p>
-                </div>
-                <p class="description" data-novamira-ts="mint-error" hidden></p>
             </div>
 
             <div class="novamira-ts-branch" data-novamira-ts-branch="login-loop" hidden>
@@ -149,7 +175,7 @@ function render_panel(string $context, string $method = '', bool $with_method_pi
 
             <div class="novamira-ts-branch" data-novamira-ts-branch="was-working" hidden>
                 <p><?php esc_html_e(
-                    'A connection that stops with 401 usually means one of: the permalink structure changed (the token audience changes with it — most clients recover on their own at the next refresh, otherwise reconnect once), the access was revoked from Connections, or the site moved to plain HTTP (which disables the OAuth endpoints entirely). The checks above cover the last case.',
+                    'A connection that stops with 401 usually means one of: the permalink structure changed (the token audience changes with it — most clients recover on their own at the next refresh, otherwise reconnect once), the access was revoked from Manage Connections, or the site moved to plain HTTP (which disables the OAuth endpoints entirely). The checks above cover the last case.',
                     domain: 'novamira',
                 ); ?></p>
             </div>
@@ -163,7 +189,7 @@ function render_panel(string $context, string $method = '', bool $with_method_pi
 
             <div class="novamira-ts-branch" data-novamira-ts-branch="password-401" hidden>
                 <p><?php esc_html_e(
-                    'For the Application Password method a 401 means: the password was revoked (check the list at the bottom of the Configuration page), Application Passwords are unavailable (see the checks above), the Authorization header is stripped before reaching PHP (the Configuration page shows a dedicated warning when it detects that), or a security plugin or firewall in front of the site is blocking or altering the authenticated request (see the Security & edge layers check above).',
+                    'For the Application Password method a 401 means: the password was revoked (check Manage Connections), Application Passwords are unavailable (see the checks above), the Authorization header is stripped before reaching PHP (the Configuration page shows a dedicated warning when it detects that), or a security plugin or firewall in front of the site is blocking or altering the authenticated request (see the Security & edge layers check above).',
                     domain: 'novamira',
                 ); ?></p>
             </div>
@@ -290,27 +316,35 @@ function render_assets_once(): void
         margin-top: 12px; padding: 14px 16px; border: 1px solid #dcdcde; border-radius: 6px;
         background: #f6f7f7;
     }
-    .novamira-ts-branch > p:first-child { margin-top: 0; }
-    .novamira-ts-mint-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-
-    /* The minted client ID reads like the credential it is. */
-    .novamira-ts-mint-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0; }
-    .novamira-ts-mint-id {
-        display: inline-block; padding: 9px 14px; border-radius: 4px;
-        background: #1d2327; color: #e8eaed; font-size: 14px; letter-spacing: .04em;
-        user-select: all;
+    .novamira-ts-branch > h3:first-child { margin-top: 0; }
+    .novamira-ts-fix-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .novamira-ts-fix-option {
+        padding: 14px 16px; border: 1px solid #dcdcde; border-radius: 5px; background: #fff;
     }
-
+    .novamira-ts-fix-option.is-recommended { border-color: #2271b1; }
+    .novamira-ts-fix-option h4 { margin: 0 0 6px; font-size: 14px; }
+    .novamira-ts-fix-option p { margin: 0 0 12px; }
+    .novamira-ts-support-email summary { cursor: pointer; font-weight: 600; color: #2271b1; }
+    .novamira-ts-support-email label { display: block; margin: 12px 0; }
+    .novamira-ts-support-email input,
+    .novamira-ts-support-email textarea { display: block; margin-top: 4px; }
+    .novamira-ts-support-email textarea { min-height: 220px; resize: vertical; }
+    .novamira-ts-direct-design {
+        margin: 12px 0 0; padding: 10px 12px; border-left: 3px solid #2271b1;
+        background: #f0f6fc; color: #135e96;
+    }
     @media (prefers-reduced-motion: reduce) {
         .novamira-ts-row { animation: none; opacity: 1; transform: none; }
         .novamira-ts-skeleton { animation: none; }
+    }
+    @media screen and (max-width: 782px) {
+        .novamira-ts-fix-options { grid-template-columns: 1fr; }
     }
     </style>
     <script>
     (function () {
         var nonce = <?php echo wp_json_encode($rest_nonce); ?>;
         var runUrl = <?php echo wp_json_encode(rest_url('novamira/v1/troubleshoot/run-checks')); ?>;
-        var mintUrl = <?php echo wp_json_encode(rest_url('novamira/v1/troubleshoot/client-id')); ?>;
         var labels = <?php echo wp_json_encode($labels); ?>;
         var glyphs = { ok: '✓', warning: '!', fail: '✕', skipped: '–', info: 'i' };
 
@@ -584,30 +618,6 @@ function render_assets_once(): void
                 });
             }
 
-            if (action === 'mint') {
-                var client = panel.querySelector('[data-novamira-ts="client"]').value;
-                var out = panel.querySelector('[data-novamira-ts="mint-result"]');
-                var err = panel.querySelector('[data-novamira-ts="mint-error"]');
-                target.disabled = true;
-                post(mintUrl, { client: client }).then(function (r) {
-                    target.disabled = false;
-                    if (!r.ok || !r.json.client_id) {
-                        err.textContent = r.json && r.json.message ? r.json.message : labels.error;
-                        err.hidden = false;
-                        out.hidden = true;
-                        return;
-                    }
-                    err.hidden = true;
-                    panel.querySelector('[data-novamira-ts="mint-id"]').textContent = r.json.client_id;
-                    panel.querySelector('[data-novamira-ts="mint-hint"]').textContent = r.json.field_hint;
-                    out.hidden = false;
-                }).catch(function () {
-                    target.disabled = false;
-                    err.textContent = labels.error;
-                    err.hidden = false;
-                });
-            }
-
             if (action === 'remedy-copy') {
                 var block = target.closest('.novamira-ts-copy').querySelector('.novamira-ts-copy-text');
                 window.novamiraClipboardCopy(block.textContent).then(function () {
@@ -626,14 +636,17 @@ function render_assets_once(): void
                 });
             }
 
-            if (action === 'mint-copy') {
-                var id = panel.querySelector('[data-novamira-ts="mint-id"]').textContent;
-                window.novamiraClipboardCopy(id).then(function () {
-                    var orig = target.textContent;
+            if (action === 'support-copy') {
+                var supportEmail = target.closest('.novamira-ts-support-email');
+                var supportSubject = supportEmail.querySelector('[data-novamira-ts="support-subject"]').value;
+                var supportMessage = supportEmail.querySelector('[data-novamira-ts="support-message"]').value;
+                window.novamiraClipboardCopy('Subject: ' + supportSubject + '\n\n' + supportMessage).then(function () {
+                    var originalLabel = target.textContent;
                     target.textContent = labels.copied;
-                    setTimeout(function () { target.textContent = orig; }, 1500);
+                    setTimeout(function () { target.textContent = originalLabel; }, 1500);
                 });
             }
+
         });
 
         document.addEventListener('change', function (e) {
