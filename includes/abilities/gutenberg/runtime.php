@@ -124,7 +124,7 @@ function finalizer_runtime_status(?WP_Post $batch = null): array
     if ($batch instanceof WP_Post) {
         foreach ($records as $record) {
             $user_id = is_scalar($record['user_id'] ?? null) ? (int) $record['user_id'] : 0;
-            if ($user_id > 0 && finalizer_runtime_user_can_finalize_batch($user_id, $batch)) {
+            if ($user_id > 0 && finalizer_runtime_user_can_finalize_batch($user_id)) {
                 $can_finalize_batch = true;
                 break;
             }
@@ -232,20 +232,7 @@ function finalizer_runtime_last_seen_at(array $records): string
     return $latest_seen_at;
 }
 
-function finalizer_runtime_user_can_finalize_batch(int $user_id, WP_Post $batch): bool
+function finalizer_runtime_user_can_finalize_batch(int $user_id): bool
 {
-    if (novamira_user_can_manage($user_id)) {
-        return true;
-    }
-
-    $edit_post_capability = 'edit_post';
-
-    foreach (get_items($batch->ID) as $item) {
-        $target_id = meta_int($item->ID, META_TARGET_ID);
-        if ($target_id <= 0 || !user_can($user_id, $edit_post_capability, $target_id)) {
-            return false;
-        }
-    }
-
-    return true;
+    return novamira_user_can_manage($user_id);
 }

@@ -93,7 +93,7 @@ function register_rest_routes(): void
 
 function rest_can_access_dashboard(): bool|WP_Error
 {
-    if (!current_user_can('edit_posts')) {
+    if (!novamira_current_user_can_manage()) {
         return new WP_Error('rest_forbidden', 'You are not allowed to access the Block Editor Queue dashboard.', [
             'status' => 403,
         ]);
@@ -116,6 +116,12 @@ function rest_can_poll_finalizer_runtime(WP_REST_Request $request): bool|WP_Erro
 
 function rest_can_access_batch(WP_REST_Request $request): bool|WP_Error
 {
+    if (!novamira_current_user_can_manage()) {
+        return new WP_Error('rest_forbidden', 'You are not allowed to finalize Gutenberg batches.', [
+            'status' => 403,
+        ]);
+    }
+
     $batch_id = rest_int_param($request, name: 'batch_id');
     $batch = find_batch($batch_id);
     if (!$batch instanceof WP_Post) {
@@ -124,29 +130,22 @@ function rest_can_access_batch(WP_REST_Request $request): bool|WP_Error
         ]);
     }
 
-    if (!current_user_can_finalize_batch($batch)) {
-        return new WP_Error('rest_forbidden', 'You are not allowed to finalize this Gutenberg batch.', [
-            'status' => 403,
-        ]);
-    }
-
     return true;
 }
 
 function rest_can_access_item(WP_REST_Request $request): bool|WP_Error
 {
+    if (!novamira_current_user_can_manage()) {
+        return new WP_Error('rest_forbidden', 'You are not allowed to finalize Gutenberg items.', [
+            'status' => 403,
+        ]);
+    }
+
     $item_id = rest_int_param($request, name: 'item_id');
     $item = find_item($item_id);
     if (!$item instanceof WP_Post) {
         return new WP_Error('gutenberg_item_not_found', sprintf('Gutenberg item %d was not found.', $item_id), [
             'status' => 404,
-        ]);
-    }
-
-    $target_id = meta_int($item->ID, META_TARGET_ID);
-    if (!novamira_current_user_can_manage() && ($target_id <= 0 || !current_user_can('edit_post', $target_id))) {
-        return new WP_Error('rest_forbidden', 'You are not allowed to finalize this Gutenberg item.', [
-            'status' => 403,
         ]);
     }
 
@@ -202,12 +201,9 @@ function rest_list_batches(WP_REST_Request $request): WP_REST_Response|WP_Error
     $statuses = rest_string_list_query_param($query_params['status'] ?? null);
     $batches = get_batches($statuses !== [] ? $statuses : null, posts_per_page: 50);
     $visible_batches = [];
-
     foreach ($batches as $batch) {
         $batch = refresh_batch_runtime_state($batch);
-        if (current_user_can_finalize_batch($batch)) {
-            $visible_batches[] = shape_batch_summary($batch);
-        }
+        $visible_batches[] = shape_batch_summary($batch);
     }
 
     return new WP_REST_Response([
@@ -298,7 +294,7 @@ function rest_finalizer_runtime_status_payload(int $batch_id, string $batch_toke
         ]);
     }
 
-    if (!current_user_can_finalize_batch($batch) && !finalizer_runtime_batch_token_is_valid($batch->ID, $batch_token)) {
+    if (!novamira_current_user_can_manage() && !finalizer_runtime_batch_token_is_valid($batch->ID, $batch_token)) {
         return new WP_Error('rest_forbidden', 'The Block Editor Queue batch status token is invalid.', [
             'status' => 403,
         ]);
@@ -380,10 +376,6 @@ function rest_claim_next_batch(): WP_REST_Response|WP_Error
 
     foreach (get_batches([STATUS_READY, STATUS_FAILED], posts_per_page: 50) as $batch) {
         $batch = refresh_batch_runtime_state($batch);
-        if (!current_user_can_finalize_batch($batch)) {
-            continue;
-        }
-
         $claim = claim_batch($batch->ID);
         if (!is_wp_error($claim)) {
             return new WP_REST_Response([

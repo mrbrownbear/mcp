@@ -1208,22 +1208,6 @@ function conflict_payload(WP_Post $item): array
     ];
 }
 
-function current_user_can_finalize_batch(WP_Post $batch): bool
-{
-    if (novamira_current_user_can_manage()) {
-        return true;
-    }
-
-    foreach (get_items($batch->ID) as $item) {
-        $target_id = meta_int($item->ID, META_TARGET_ID);
-        if ($target_id <= 0 || !current_user_can('edit_post', $target_id)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 function mark_stale_drafts(): void
 {
     $cutoff = gmdate('Y-m-d H:i:s', time() - DRAFT_STALE_SECONDS);

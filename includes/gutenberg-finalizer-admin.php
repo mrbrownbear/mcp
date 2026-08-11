@@ -32,7 +32,7 @@ function register_gutenberg_finalizer_menu(): void
         parent_slug: 'novamira-connect',
         page_title: __('Block Editor Queue', domain: 'novamira'),
         menu_title: __('Block Editor Queue', domain: 'novamira'),
-        capability: 'edit_posts',
+        capability: novamira_manage_capability(),
         menu_slug: gutenberg_finalizer_page_slug(),
         callback: __NAMESPACE__ . '\\render_gutenberg_finalizer_page',
     );
@@ -81,7 +81,7 @@ function is_gutenberg_finalizer_request(): bool
 
 function render_gutenberg_finalizer_page(): void
 {
-    if (!current_user_can('edit_posts')) {
+    if (!novamira_current_user_can_manage()) {
         return;
     }
 
