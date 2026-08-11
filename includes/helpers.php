@@ -663,6 +663,17 @@ function novamira_manage_capability(): string
 }
 
 /**
+ * Whether an Application Password belongs to Novamira.
+ *
+ * @param array<string, mixed> $password Application Password record.
+ */
+function novamira_is_application_password(array $password): bool
+{
+    $name = is_string($password['name'] ?? null) ? $password['name'] : '';
+    return str_starts_with($name, 'Novamira');
+}
+
+/**
  * Return the persisted per-ability hub rules.
  *
  * @return array<string, array{disabled: bool}>

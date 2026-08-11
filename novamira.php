@@ -140,7 +140,14 @@ function novamira_render_mcp_dependency_notice(): void
         is_string($page)
         && in_array(
             $page,
-            ['novamira-connect', 'novamira-connections', 'novamira-abilities', 'novamira-chat', 'novamira-sandbox'],
+            [
+                'novamira-connect',
+                'novamira-connections',
+                'novamira-abilities',
+                'novamira-chat',
+                'novamira-sandbox',
+                'novamira-uninstall',
+            ],
             strict: true,
         )
     ) {
@@ -229,6 +236,8 @@ require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/abilities/bootstrap.php';
 require_once __DIR__ . '/includes/updater.php';
 require_once __DIR__ . '/includes/admin-page.php';
+require_once __DIR__ . '/includes/uninstall-review.php';
+register_activation_hook(__FILE__, callback: 'novamira_clear_uninstall_plan');
 require_once __DIR__ . '/includes/hosting/detector.php';
 require_once __DIR__ . '/includes/connect-page.php';
 require_once __DIR__ . '/includes/oauth/connections.php';

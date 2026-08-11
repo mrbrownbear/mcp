@@ -334,7 +334,7 @@ function novamira_handle_revoke_password(string $redirect_page = 'novamira-conne
 }
 
 /**
- * Return all application passwords for the current user whose name begins with "Novamira".
+ * Return the current user's Novamira Application Passwords.
  *
  * @return array<int, array<string, mixed>>
  */
@@ -342,7 +342,7 @@ function novamira_get_mcp_passwords(): array
 {
     $user_id = get_current_user_id();
     $all = WP_Application_Passwords::get_user_application_passwords($user_id);
-    return array_values(array_filter($all, static fn($item) => str_starts_with($item['name'], 'Novamira')));
+    return array_values(array_filter(array: $all, callback: 'novamira_is_application_password'));
 }
 
 /**
