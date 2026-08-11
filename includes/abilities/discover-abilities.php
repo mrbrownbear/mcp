@@ -19,6 +19,68 @@ if (!defined('ABSPATH')) {
     exit();
 }
 
+/** Check whether the current user may view an Ability's MCP metadata. */
+function novamira_current_user_can_view_ability_metadata(string $ability_name): bool
+{
+    return !str_starts_with($ability_name, 'novamira/') || novamira_current_user_can_manage();
+}
+
+/** Keep the MCP Adapter's standard permission for the shared discovery tool. */
+function novamira_discover_abilities_permission(): bool|\WP_Error
+{
+    if (!is_user_logged_in()) {
+        return new \WP_Error('authentication_required', 'User must be authenticated to access this ability');
+    }
+
+    /** @var string $capability */
+    $capability = apply_filters('mcp_adapter_discover_abilities_capability', value: 'read');
+    if (!current_user_can($capability)) {
+        return new \WP_Error('insufficient_capability', sprintf('User lacks required capability: %s', $capability));
+    }
+
+    return true;
+}
+
+/** Apply Novamira metadata visibility to the shared get-ability-info tool. */
+function novamira_get_ability_info_permission(mixed $input = []): bool|\WP_Error
+{
+    $arguments = is_array($input) ? $input : [];
+    $adapter_permission = \WP\MCP\Abilities\GetAbilityInfoAbility::check_permission($arguments);
+    if (is_wp_error($adapter_permission) || !$adapter_permission) {
+        return $adapter_permission;
+    }
+
+    $ability_name = is_string($arguments['ability_name'] ?? null) ? $arguments['ability_name'] : '';
+    if (!novamira_current_user_can_view_ability_metadata($ability_name)) {
+        return new \WP_Error('insufficient_capability', 'You are not allowed to inspect Novamira ability metadata.');
+    }
+
+    return true;
+}
+
+/** Register get-ability-info with the Novamira metadata visibility check. */
+function novamira_protect_get_ability_info(): void
+{
+    $ability_name = 'mcp-adapter/get-ability-info';
+    $ability = wp_has_ability($ability_name) ? wp_get_ability($ability_name) : null;
+    $execute_callback = [\WP\MCP\Abilities\GetAbilityInfoAbility::class, 'execute'];
+    if (!$ability instanceof \WP_Ability) {
+        return;
+    }
+
+    wp_unregister_ability($ability_name);
+    wp_register_ability($ability_name, [
+        'label' => $ability->get_label(),
+        'description' => $ability->get_description(),
+        'category' => $ability->get_category(),
+        'input_schema' => $ability->get_input_schema(),
+        'output_schema' => $ability->get_output_schema(),
+        'permission_callback' => 'novamira_get_ability_info_permission',
+        'execute_callback' => $execute_callback,
+        'meta' => $ability->get_meta(),
+    ]);
+}
+
 $novamira_existing_ability = wp_has_ability('mcp-adapter/discover-abilities')
     ? wp_get_ability('mcp-adapter/discover-abilities')
     : null;
@@ -59,17 +121,7 @@ wp_register_ability('mcp-adapter/discover-abilities', [
         ],
         'required' => ['novamira_instructions', 'abilities'],
     ],
-    'permission_callback' => static function (): bool|\WP_Error {
-        if (!is_user_logged_in()) {
-            return new \WP_Error('authentication_required', 'User must be authenticated to access this ability');
-        }
-        /** @var string $cap */
-        $cap = apply_filters('mcp_adapter_discover_abilities_capability', value: 'read');
-        if (!current_user_can($cap)) {
-            return new \WP_Error('insufficient_capability', sprintf('User lacks required capability: %s', $cap));
-        }
-        return true;
-    },
+    'permission_callback' => 'novamira_discover_abilities_permission',
     'execute_callback' => static function (): array {
         $ability_list = [];
         foreach (wp_get_abilities() as $ability) {
@@ -78,6 +130,9 @@ wp_register_ability('mcp-adapter/discover-abilities', [
                 continue;
             }
             if (($meta['mcp']['type'] ?? 'tool') !== 'tool') {
+                continue;
+            }
+            if (!novamira_current_user_can_view_ability_metadata($ability->get_name())) {
                 continue;
             }
             $ability_list[] = [
@@ -112,3 +167,5 @@ wp_register_ability('mcp-adapter/discover-abilities', [
         ],
     ],
 ]);
+
+novamira_protect_get_ability_info();
