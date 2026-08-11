@@ -16,12 +16,16 @@ mkdir -p "$BUILD_DIR"
 cd "$BASEDIR"
 
 # Build the Novamira Chat dashboard assets (src/chat -> includes/assets/chat)
-bun install
+rm -rf includes/assets/chat
+rm -rf node_modules
+bun install --frozen-lockfile
 bun run build
 
 # Build Novamira Visual assets when present
 if [ -d novamira-visual ]; then
 	cd novamira-visual
+	rm -rf dist
+	rm -rf node_modules
 	bun install --frozen-lockfile
 	bun run build
 	cd "$BASEDIR"
@@ -40,10 +44,11 @@ if [ -d novamira-visual/dist ]; then
 	rsync -rl --mkpath --include='*.js' --exclude='*' novamira-visual/dist/ "$BUILD_DIR/novamira-visual/dist/"
 fi
 
-# Install production deps and copy vendor into build
-composer install --no-dev --optimize-autoloader --no-interaction
-rsync -rl --exclude='php-stubs' --exclude='bin' vendor/ "$BUILD_DIR/vendor/"
-composer install --no-interaction  # restore dev deps
+# Install production dependencies directly into the isolated build. This keeps
+# the zip independent of the existing ignored vendor tree and leaves the
+# development installation untouched.
+COMPOSER_VENDOR_DIR="$BUILD_DIR/vendor" composer install --no-dev --optimize-autoloader --no-interaction
+rm -rf "$BUILD_DIR/vendor/php-stubs" "$BUILD_DIR/vendor/bin"
 
 # Remove empty directories
 find "$BUILD_DIR" -type d -empty -delete
