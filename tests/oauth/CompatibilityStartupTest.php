@@ -136,7 +136,9 @@ final class CompatibilityStartupTest extends TestCase
         );
         self::assertSame(
             [
-                'plugin_version' => '1.11.2',
+                // Derived, not pinned: the shape is what is frozen here, and
+                // testPluginHeaderAndInternalVersionsAgree covers the value
+                'plugin_version' => NOVAMIRA_VERSION,
                 'rest_api_version' => 1,
                 'wordpress_version' => '6.9.2',
                 'minimum_wordpress_version' => '6.9',

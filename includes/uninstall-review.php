@@ -67,7 +67,9 @@ function novamira_uninstall_action_links(array $actions): array
 function novamira_render_uninstall_review_page(): void
 {
     if (!novamira_current_user_can_manage()) {
-        wp_die(esc_html__('You are not allowed to deactivate Novamira.', domain: 'novamira'), args: ['response' => 403]);
+        wp_die(esc_html__('You are not allowed to deactivate Novamira.', domain: 'novamira'), args: [
+            'response' => 403,
+        ]);
     }
 
     $sandbox_file_count = novamira_uninstall_sandbox_file_count();
@@ -186,9 +188,9 @@ function novamira_render_uninstall_review_page(): void
                         status.textContent = ' <?php echo esc_js(__('Copied.', domain: 'novamira')); ?>';
                     } catch {
                         prompt.select();
-                        status.textContent = ' <?php echo esc_js(
-                            __('Select the prompt and copy it manually.', domain: 'novamira'),
-                        ); ?>';
+                        status.textContent = ' <?php echo
+                            esc_js(__('Select the prompt and copy it manually.', domain: 'novamira'))
+                        ; ?>';
                     }
                 });
             })();
@@ -200,7 +202,9 @@ function novamira_render_uninstall_review_page(): void
 function novamira_handle_prepare_uninstall(): void
 {
     if (!novamira_current_user_can_manage()) {
-        wp_die(esc_html__('You are not allowed to deactivate Novamira.', domain: 'novamira'), args: ['response' => 403]);
+        wp_die(esc_html__('You are not allowed to deactivate Novamira.', domain: 'novamira'), args: [
+            'response' => 403,
+        ]);
     }
 
     $plugin = plugin_basename(dirname(__DIR__) . '/novamira.php');
@@ -211,10 +215,7 @@ function novamira_handle_prepare_uninstall(): void
     }
 
     check_admin_referer('novamira_prepare_uninstall');
-    if (
-        novamira_uninstall_sandbox_file_count() > 0
-        && !array_key_exists('confirm_sandbox_files', $_POST)
-    ) {
+    if (novamira_uninstall_sandbox_file_count() > 0 && !array_key_exists('confirm_sandbox_files', $_POST)) {
         wp_die(
             esc_html__('Confirm that you understand what will happen to the sandbox files.', domain: 'novamira'),
             args: ['response' => 400],

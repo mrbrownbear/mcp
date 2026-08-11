@@ -11,12 +11,16 @@ Run the release as `bin/release VERSION --non-interactive`. It never waits for i
 
 Write the changelog entry first, at the top of `CHANGELOG.txt` with no version header — the release assigns `vVERSION - date`. Proofread it yourself; this mode does not spellcheck.
 
-NEVER modify `release-info.json` by hand unless explicitly instructed to do so; it is modified programmatically.
+NEVER modify `release-info.json` by hand; it is modified programmatically — `bin/release-info.js` writes it, and `--list-steps` aside, no step expects you to open it.
 
 ## Steps that stop the run
 
+- **"wordpress compatibilities"** fails whenever WordPress ships any release newer than `requirements.tested`, including a patch. Test the plugin against that version, then record it with `bin/release-info.js set-tested X.Y.Z`. Releasing without testing against it is the user's call to make, not yours.
+- **"run tests"** runs `make test-unit`, the PHPUnit suite. It needs no WordPress install, host or network, so there is no environment to blame and no flag to skip it: a failure is the code, and the release stops until it passes. The MCP suite (`make test`) runs against a live environment and is deliberately not part of the release.
 - **"check files"** fails when the zip ships files the previous release did not. Read the list: anything that does not belong in a plugin distributed to users goes in `build/build-ignore`. Re-run with `--accept-new-files` once the additions are meant to ship, and show the user the list when it is not obvious.
-- **"commit release"** verifies rather than commits. The first run stops there; commit, tag and push as instructed, then resume with `RESUME_FROM="commit release"`.
+- **"commit release"** verifies rather than commits. The first run stops there; commit, tag and push exactly as instructed, then resume with `RESUME_FROM="commit release"`.
+
+Resuming skips every earlier step, including "build zip". After changing any code, resume from `"build zip"` or earlier, or the run ships the zip built before the fix.
 
 ## Rollout — always the user's call
 
