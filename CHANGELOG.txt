@@ -2,8 +2,9 @@
 * New: Novamira detects Kinsta, WP Engine, Hostinger, SiteGround, Pantheon, and Cloudflare security layers that may classify direct connections from cloud AI clients as bot traffic. Application Password is recommended where appropriate, while OAuth remains available with a dismissible technical warning and an editable support email template.
 * New: A dedicated Manage Connections page brings OAuth connected apps and Novamira Application Passwords together, with their usage details and revoke actions.
 * New: Command-line tools can sign in with a device code when their browser runs on another machine, such as a shell reached over SSH or inside a container. The tool shows a short code, and you approve it from any device where you are signed in to this site. Only approve a code you started yourself.
+* New: Before deactivation, Novamira warns when sandbox files may be powering site functionality, provides a copyable prompt for moving them to persistent storage, and lets administrators choose whether uninstall should remove OAuth data and revoke Novamira Application Passwords across all users.
 * Tweak: Codex in ChatGPT Desktop and Codex CLI now have separate setup instructions, and the consumer Gemini CLI entry has moved to Antigravity CLI with its current MCP configuration format.
-* Tweak: simplify troubleshooting for blocked OAuth connections
+* Tweak: simplify troubleshooting for blocked OAuth connections.
 * Fix: Claude Code connection commands now register the MCP server globally for the current user.
 * Fix: The Block Editor Queue no longer fails every batch with a "Blocked a frame with origin ... from accessing a cross-origin frame" error. When the hidden block editor iframe cannot be read, the queue now serializes with the block runtime of the queue page itself and reports why the iframe was unavailable, instead of failing the batch.
 
