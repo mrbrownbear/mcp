@@ -1,6 +1,7 @@
 Unreleased
 * New: Before deactivating Novamira, the review page now shows stored Novamira Pro memories, user-added skills, and Chat sessions. Choose whether to preserve or permanently delete each data type when removing the plugin.
 * New: AI clients can now discover which Gutenberg block types a site has registered and read each block's attribute schema, supports, and nesting constraints before composing content, instead of finding out about a wrong block name or attribute only when a Block Editor Queue batch fails.
+* Fix: The Block Editor Queue endpoints for claiming, completing, and failing queue items now respond with a clear "send a JSON object body" error when a request arrives without a JSON body or with a malformed one, instead of stopping with a PHP fatal error that left the batch stuck in the running state.
 * Fix: The Block Editor Queue now mounts blocks in the hidden block editor before saving them, so blocks that receive their settings from the editor itself save complete. Previously blocks from libraries such as Kadence Blocks, Spectra, and GenerateBlocks could save without their per-block style IDs and layout markers — rendering unstyled, or with a row's columns stacked full-width — even though the queue reported success.
 
 v1.11.3 - 2026/08/11
