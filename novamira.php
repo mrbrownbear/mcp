@@ -284,6 +284,8 @@ function novamira_load_gutenberg_abilities(): void
     require_once $gutenberg_dir . 'bootstrap.php';
     require_once $gutenberg_dir . 'runtime.php';
     require_once $gutenberg_dir . 'get-finalizer-runtime.php';
+    require_once $gutenberg_dir . 'list-block-types.php';
+    require_once $gutenberg_dir . 'get-block-type.php';
     require_once $gutenberg_dir . 'get-content.php';
     require_once $gutenberg_dir . 'write-content.php';
     require_once $gutenberg_dir . 'create-pending-batch.php';
