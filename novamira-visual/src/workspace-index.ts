@@ -597,7 +597,8 @@ class AgentWorkspace {
 		note.innerHTML =
 			'An experiment for development and staging sites: it may change, or be removed. ' +
 			'Whether it grows depends on the community. ' +
-			'<a href="https://facebook.com/groups/novamira" target="_blank" rel="noopener">Join us on Facebook</a>.';
+			'<a href="https://discord.gg/novamira" target="_blank" rel="noopener">Join us on Discord</a> or ' +
+			'<a href="https://facebook.com/groups/novamira" target="_blank" rel="noopener">Facebook</a>.';
 		section.appendChild(note);
 
 		const actions = document.createElement("div");

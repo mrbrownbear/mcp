@@ -6,6 +6,8 @@ MCP server that gives AI agents full access to WordPress through PHP execution a
 
 For documentation, visit [novamira.ai](https://novamira.ai).
 
+Join the community on [Discord](https://discord.gg/novamira) or in the [Facebook Community](https://www.facebook.com/groups/novamira).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

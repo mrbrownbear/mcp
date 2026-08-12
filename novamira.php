@@ -470,16 +470,14 @@ if (
     require_once __DIR__ . '/includes/skills/dev-mock.php';
 }
 
-// Add "Community" link to the plugin row meta on the Plugins page.
+// Add community links to the plugin row meta on the Plugins page.
 add_filter(
     'plugin_row_meta',
     /** @param string[] $plugin_meta */
     static function (array $plugin_meta, string $plugin_file): array {
         if ($plugin_file === plugin_basename(__FILE__)) {
-            $plugin_meta[] =
-                '<a href="https://www.facebook.com/groups/novamira" target="_blank" rel="noopener noreferrer">'
-                . esc_html__('Community', domain: 'novamira')
-                . '</a>';
+            $plugin_meta[] = '<a href="https://www.facebook.com/groups/novamira" target="_blank" rel="noopener noreferrer">Facebook Community</a>';
+            $plugin_meta[] = '<a href="https://discord.gg/novamira" target="_blank" rel="noopener noreferrer">Discord</a>';
         }
         return $plugin_meta;
     },
