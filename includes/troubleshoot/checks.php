@@ -997,7 +997,7 @@ function check_environment(array $headers): array
  * A plain-text diagnostic report for support: site context, detected layers, and every check with
  * its status. No secrets.
  *
- * @param array{site_url: string, novamira_version: string, wp_version: string, php_version: string, method: string} $meta
+ * @param array{site_url: string, novamira_version: string, wp_version: string, php_version: string, method: string, hosting: string} $meta
  * @param list<string>                                                                                                $detected_layers
  * @param list<array{id: string, status: string, label: string, message: string, remedy: string, action: string, copy: string}> $checks
  */
@@ -1006,6 +1006,9 @@ function build_support_report(array $meta, array $detected_layers, array $checks
     $lines = [];
     $lines[] = 'Novamira connection diagnostic';
     $lines[] = 'Site: ' . $meta['site_url'];
+    if ($meta['hosting'] !== '') {
+        $lines[] = 'Hosting detected: ' . $meta['hosting'];
+    }
     $lines[] =
         'Novamira: '
         . $meta['novamira_version']

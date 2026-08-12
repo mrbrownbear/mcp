@@ -16,8 +16,8 @@ use function Novamira\Troubleshoot\Checks\build_support_report;
 
 final class SupportReportTest extends TestCase
 {
-    /** @return array{site_url: string, novamira_version: string, wp_version: string, php_version: string, method: string} */
-    private function meta(): array
+    /** @return array{site_url: string, novamira_version: string, wp_version: string, php_version: string, method: string, hosting: string} */
+    private function meta(string $hosting = ''): array
     {
         return [
             'site_url' => 'https://example.com',
@@ -25,6 +25,7 @@ final class SupportReportTest extends TestCase
             'wp_version' => '6.9',
             'php_version' => '8.3.0',
             'method' => 'oauth',
+            'hosting' => $hosting,
         ];
     }
 
@@ -36,9 +37,10 @@ final class SupportReportTest extends TestCase
             ['id' => 'c', 'status' => 'warning', 'label' => 'Bot filter', 'message' => 'UA blocked', 'remedy' => '', 'action' => '', 'copy' => ''],
         ];
 
-        $report = build_support_report($this->meta(), ['Cloudflare', 'Wordfence'], $checks);
+        $report = build_support_report($this->meta('Kinsta'), ['Cloudflare', 'Wordfence'], $checks);
 
         self::assertStringContainsString('https://example.com', $report);
+        self::assertStringContainsString('Hosting detected: Kinsta', $report);
         self::assertStringContainsString('Novamira: 1.10.0', $report);
         self::assertStringContainsString('Cloudflare, Wordfence', $report);
         self::assertStringContainsString('[FAIL] Discovery: 404 on well-known', $report);
@@ -55,6 +57,7 @@ final class SupportReportTest extends TestCase
 
         $report = build_support_report($this->meta(), [], $checks);
 
+        self::assertStringNotContainsString('Hosting detected:', $report);
         self::assertStringContainsString('Security/edge detected: none', $report);
         self::assertStringContainsString('[OK] Fine: all good', $report);
     }

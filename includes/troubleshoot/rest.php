@@ -35,12 +35,14 @@ function run_checks(WP_REST_Request $req): WP_REST_Response
     // run_all() already probed for security/edge layers; current_security_edge_layers() caches that
     // result for this request, so the report reuses it without a second self-request.
     $layers = \Novamira\Troubleshoot\Checks\current_security_edge_layers();
+    $hosting = \Novamira\Hosting\Detector::current();
     $meta = [
         'site_url' => home_url('/'),
         'novamira_version' => defined('NOVAMIRA_VERSION') ? NOVAMIRA_VERSION : '',
         'wp_version' => get_bloginfo('version'),
         'php_version' => PHP_VERSION,
         'method' => $method ?? '',
+        'hosting' => $hosting['name'] ?? '',
     ];
 
     return new WP_REST_Response([
