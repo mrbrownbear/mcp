@@ -577,11 +577,110 @@ function gutenberg_finalizer_script(): string
                 return validations;
             };
 
+            // Mount the created blocks in the hidden editor's block-editor store and let their
+            // edit() components run their mount effects before serializing. Plugin blocks such as
+            // Kadence assign editor-managed attributes (uniqueID, kbVersion, ...) from those
+            // effects; serializing bare createBlock() output silently drops them, which breaks
+            // front-end rendering even though block validation passes. Returns the settled block
+            // tree, or null when the store is unavailable (fallback runtime) so the caller keeps
+            // the previous createBlock()-only behavior.
+            const mountAndSettleBlocks = async ( created ) => {
+                try {
+                    const frameWindow = iframeWindow();
+                    if ( ! frameWindow || ! frameWindow.wp || ! frameWindow.wp.data || ! frameWindow.wp.blocks ) {
+                        return null;
+                    }
+
+                    const frameData = frameWindow.wp.data;
+                    const blockEditorDispatch = frameData.dispatch( 'core/block-editor' );
+                    const blockEditorSelect = frameData.select( 'core/block-editor' );
+                    if (
+                        ! blockEditorDispatch
+                        || ! blockEditorSelect
+                        || typeof blockEditorDispatch.resetBlocks !== 'function'
+                        || typeof blockEditorSelect.getBlocks !== 'function'
+                    ) {
+                        return null;
+                    }
+
+                    // In the post editor the core/block-editor store is CONTROLLED: it is synced
+                    // from the core/editor post entity, so a direct resetBlocks() is overwritten
+                    // by editor hydration and the harvest would silently return the post's OLD
+                    // content. Wait for hydration, then reset through core/editor instead.
+                    const editorSelect = frameData.select( 'core/editor' );
+                    const editorDispatch = frameData.dispatch( 'core/editor' );
+
+                    const hydrationDeadline = Date.now() + Number( config.editorLoadTimeoutMs || 30000 );
+                    while ( Date.now() < hydrationDeadline ) {
+                        const ready = editorSelect && typeof editorSelect.__unstableIsEditorReady === 'function'
+                            ? editorSelect.__unstableIsEditorReady()
+                            : blockEditorSelect.getBlocks().length > 0;
+                        if ( ready ) {
+                            break;
+                        }
+                        await sleep( 200 );
+                    }
+
+                    // The hidden editor must never persist this experiment on its own.
+                    try {
+                        editorDispatch.lockPostAutosaving( 'novamira-gb-finalizer' );
+                        editorDispatch.lockPostSaving( 'novamira-gb-finalizer' );
+                    } catch ( lockError ) {
+                        // Older editors may lack the locks; mounting is still safe because the
+                        // finalizer persists content through its own REST call, not the editor.
+                    }
+
+                    if ( editorDispatch && typeof editorDispatch.resetEditorBlocks === 'function' ) {
+                        editorDispatch.resetEditorBlocks( created );
+                    } else {
+                        blockEditorDispatch.resetBlocks( created );
+                    }
+
+                    // Confirm the store now holds OUR tree (same top-level names, in order)
+                    // before trusting anything it returns.
+                    const sameTopLevelNames = ( currentBlocks ) => Array.isArray( currentBlocks )
+                        && currentBlocks.length === created.length
+                        && currentBlocks.every( ( block, index ) => block && block.name === created[ index ].name );
+
+                    const applyDeadline = Date.now() + 5000;
+                    let applied = false;
+                    while ( Date.now() < applyDeadline ) {
+                        if ( sameTopLevelNames( blockEditorSelect.getBlocks() ) ) {
+                            applied = true;
+                            break;
+                        }
+                        await sleep( 100 );
+                    }
+                    if ( ! applied ) {
+                        return null;
+                    }
+
+                    // Mount effects run over the next frames; treat two identical consecutive
+                    // serializations as "settled" and give up after a bounded wait.
+                    const settleDeadline = Date.now() + Number( config.mountSettleTimeoutMs || 5000 );
+                    let previousSnapshot = '';
+                    while ( Date.now() < settleDeadline ) {
+                        await sleep( 250 );
+                        const snapshot = frameWindow.wp.blocks.serialize( blockEditorSelect.getBlocks() );
+                        if ( snapshot !== '' && snapshot === previousSnapshot ) {
+                            break;
+                        }
+                        previousSnapshot = snapshot;
+                    }
+
+                    const settled = blockEditorSelect.getBlocks();
+                    return sameTopLevelNames( settled ) ? settled : null;
+                } catch ( error ) {
+                    return null;
+                }
+            };
+
             const serializeJob = async ( job ) => {
                 const blocks = job.blocks || [];
                 const blocksApi = await loadEditorBlocksApi( job.editor_url || '', blocks );
                 const created = blocks.map( ( spec ) => toBlock( blocksApi, spec ) );
-                const content = blocksApi.serialize( created );
+                const settled = await mountAndSettleBlocks( created );
+                const content = blocksApi.serialize( settled || created );
                 const parsed = blocksApi.parse( content );
                 const validations = validateBlocks( blocksApi, parsed );
                 const errors = [];

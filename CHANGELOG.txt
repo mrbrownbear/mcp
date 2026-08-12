@@ -1,5 +1,6 @@
 Unreleased
 * New: Before deactivating Novamira, the review page now shows stored Novamira Pro memories, user-added skills, and Chat sessions. Choose whether to preserve or permanently delete each data type when removing the plugin.
+* Fix: The Block Editor Queue now mounts blocks in the hidden block editor before saving them, so blocks that receive their settings from the editor itself save complete. Previously blocks from libraries such as Kadence Blocks, Spectra, and GenerateBlocks could save without their per-block style IDs and layout markers — rendering unstyled, or with a row's columns stacked full-width — even though the queue reported success.
 
 v1.11.3 - 2026/08/11
 * New: The Configuration page now asks for the AI client before the authentication method, shows every supported client, and explains technically why an authentication method or cloud-only client cannot work in the current environment.
