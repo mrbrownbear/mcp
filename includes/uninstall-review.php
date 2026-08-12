@@ -74,6 +74,7 @@ function novamira_render_uninstall_review_page(): void
 
     $sandbox_file_count = novamira_uninstall_sandbox_file_count();
     $password_count = novamira_uninstall_application_password_count();
+    $content_counts = novamira_uninstall_content_counts();
     novamira_render_admin_header();
     ?>
     <div class="wrap novamira-uninstall-wrap">
@@ -136,6 +137,92 @@ function novamira_render_uninstall_review_page(): void
                 </p>
             </div>
         <?php endif; ?>
+
+            <div class="card" style="max-width:760px; margin-top:20px;">
+                <h2><?php esc_html_e('Stored content', domain: 'novamira'); ?></h2>
+                <p><?php esc_html_e(
+                    'Deactivating Novamira keeps this content in the database, but Memory, user-added Skills, and Chat will be unavailable. They become available again when Novamira and any required add-on are active.',
+                    domain: 'novamira',
+                ); ?></p>
+
+                <?php if ($content_counts['memories'] > 0): ?>
+                    <p><strong><?php echo
+                        esc_html(sprintf(
+                            _n(
+                                single: '%d Novamira Pro memory was found.',
+                                plural: '%d Novamira Pro memories were found.',
+                                number: $content_counts['memories'],
+                                domain: 'novamira',
+                            ),
+                            $content_counts['memories'],
+                        ))
+                    ; ?></strong></p>
+                    <p>
+                        <label>
+                            <input type="checkbox" name="delete_memories" value="1">
+                            <?php esc_html_e(
+                                'When Novamira is deleted, permanently delete these memories',
+                                domain: 'novamira',
+                            ); ?>
+                        </label>
+                    </p>
+                <?php endif; ?>
+                <?php if ($content_counts['memories'] === 0): ?>
+                    <p><?php esc_html_e('No Novamira Pro memories were found.', domain: 'novamira'); ?></p>
+                <?php endif; ?>
+
+                <?php if ($content_counts['user_skills'] > 0): ?>
+                    <p><strong><?php echo
+                        esc_html(sprintf(
+                            _n(
+                                single: '%d user-added skill was found.',
+                                plural: '%d user-added skills were found.',
+                                number: $content_counts['user_skills'],
+                                domain: 'novamira',
+                            ),
+                            $content_counts['user_skills'],
+                        ))
+                    ; ?></strong></p>
+                    <p>
+                        <label>
+                            <input type="checkbox" name="delete_user_skills" value="1">
+                            <?php esc_html_e(
+                                'When Novamira is deleted, permanently delete these user-added skills',
+                                domain: 'novamira',
+                            ); ?>
+                        </label>
+                    </p>
+                <?php endif; ?>
+                <?php if ($content_counts['user_skills'] === 0): ?>
+                    <p><?php esc_html_e('No user-added skills were found.', domain: 'novamira'); ?></p>
+                <?php endif; ?>
+
+                <?php if ($content_counts['chat_sessions'] > 0): ?>
+                    <p><strong><?php echo
+                        esc_html(sprintf(
+                            _n(
+                                single: '%d Novamira Chat session was found.',
+                                plural: '%d Novamira Chat sessions were found.',
+                                number: $content_counts['chat_sessions'],
+                                domain: 'novamira',
+                            ),
+                            $content_counts['chat_sessions'],
+                        ))
+                    ; ?></strong></p>
+                    <p>
+                        <label>
+                            <input type="checkbox" name="delete_chat_sessions" value="1" checked>
+                            <?php esc_html_e(
+                                'When Novamira is deleted, permanently delete these chat sessions',
+                                domain: 'novamira',
+                            ); ?>
+                        </label>
+                    </p>
+                <?php endif; ?>
+                <?php if ($content_counts['chat_sessions'] === 0): ?>
+                    <p><?php esc_html_e('No Novamira Chat sessions were found.', domain: 'novamira'); ?></p>
+                <?php endif; ?>
+            </div>
 
             <div class="card" style="max-width:760px; margin-top:20px;">
                 <h2><?php esc_html_e('Connections', domain: 'novamira'); ?></h2>
@@ -224,6 +311,9 @@ function novamira_handle_prepare_uninstall(): void
     update_site_option(NOVAMIRA_UNINSTALL_PLAN_OPTION, [
         'delete_oauth' => array_key_exists('delete_oauth', $_POST),
         'delete_application_passwords' => array_key_exists('delete_application_passwords', $_POST),
+        'delete_memories' => array_key_exists('delete_memories', $_POST),
+        'delete_user_skills' => array_key_exists('delete_user_skills', $_POST),
+        'delete_chat_sessions' => array_key_exists('delete_chat_sessions', $_POST),
     ]);
 
     if (!function_exists('deactivate_plugins')) {
@@ -268,6 +358,75 @@ function novamira_uninstall_sandbox_file_count(): int
     }
 
     return $count;
+}
+
+/** @return array{memories: int, user_skills: int, chat_sessions: int} */
+function novamira_uninstall_content_counts(): array
+{
+    $plugin = plugin_basename(dirname(__DIR__) . '/novamira.php');
+    if (!is_multisite() || !is_plugin_active_for_network($plugin)) {
+        return novamira_uninstall_current_site_content_counts();
+    }
+
+    $counts = ['memories' => 0, 'user_skills' => 0, 'chat_sessions' => 0];
+    // @mago-expect analysis:mixed-assignment -- WordPress returns site ids when fields=ids.
+    $site_ids = get_sites(['fields' => 'ids', 'number' => 0]);
+    if (!is_array($site_ids)) {
+        return $counts;
+    }
+
+    // @mago-expect analysis:mixed-assignment
+    foreach ($site_ids as $site_id) {
+        switch_to_blog((int) $site_id);
+        $site_counts = novamira_uninstall_current_site_content_counts();
+        restore_current_blog();
+
+        $counts['memories'] += $site_counts['memories'];
+        $counts['user_skills'] += $site_counts['user_skills'];
+        $counts['chat_sessions'] += $site_counts['chat_sessions'];
+    }
+
+    return $counts;
+}
+
+/** @return array{memories: int, user_skills: int, chat_sessions: int} */
+function novamira_uninstall_current_site_content_counts(): array
+{
+    return [
+        'memories' => novamira_uninstall_post_type_count('novamira_memory'),
+        'user_skills' => novamira_uninstall_post_type_count('novamira_skill'),
+        'chat_sessions' => novamira_uninstall_chat_session_count(),
+    ];
+}
+
+function novamira_uninstall_post_type_count(string $post_type): int
+{
+    // @mago-expect lint:no-global -- $wpdb is WordPress' database handle.
+    global $wpdb;
+
+    /** @var wpdb $wpdb */
+    $query = $wpdb->prepare('SELECT COUNT(ID) FROM %i WHERE post_type = %s', $wpdb->posts, $post_type);
+    if (!is_string($query)) {
+        return 0;
+    }
+
+    return (int) $wpdb->get_var($query);
+}
+
+function novamira_uninstall_chat_session_count(): int
+{
+    // @mago-expect lint:no-global -- $wpdb is WordPress' database handle.
+    global $wpdb;
+
+    /** @var wpdb $wpdb */
+    $table = $wpdb->prefix . 'novamira_chat_sessions';
+    $table_query = $wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table));
+    if (!is_string($table_query) || $wpdb->get_var($table_query) !== $table) {
+        return 0;
+    }
+
+    $count_query = $wpdb->prepare('SELECT COUNT(*) FROM %i', $table);
+    return is_string($count_query) ? (int) $wpdb->get_var($count_query) : 0;
 }
 
 function novamira_uninstall_application_password_count(): int

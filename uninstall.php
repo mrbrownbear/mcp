@@ -12,7 +12,7 @@ if (!defined('WP_UNINSTALL_PLUGIN')) {
 const NOVAMIRA_UNINSTALL_PLAN_OPTION = 'novamira_uninstall_plan';
 
 /**
- * @return array{delete_oauth: bool, delete_application_passwords: bool}
+ * @return array{delete_oauth: bool, delete_application_passwords: bool, delete_memories: bool, delete_user_skills: bool, delete_chat_sessions: bool}
  */
 function novamira_uninstall_plan(): array
 {
@@ -26,22 +26,39 @@ function novamira_uninstall_plan(): array
         // Preserve the uninstall behavior used before cleanup choices were introduced.
         'delete_oauth' => !array_key_exists('delete_oauth', $stored) || $stored['delete_oauth'] === true,
         'delete_application_passwords' => ($stored['delete_application_passwords'] ?? false) === true,
+        'delete_memories' => ($stored['delete_memories'] ?? false) === true,
+        'delete_user_skills' => ($stored['delete_user_skills'] ?? false) === true,
+        // Preserve the legacy behavior only when no explicit Chat cleanup choice was stored.
+        'delete_chat_sessions' => !array_key_exists('delete_chat_sessions', $stored)
+            || $stored['delete_chat_sessions'] === true,
     ];
 }
 
-function novamira_uninstall_current_site(bool $delete_oauth): void
+/**
+ * @param array{delete_oauth: bool, delete_application_passwords: bool, delete_memories: bool, delete_user_skills: bool, delete_chat_sessions: bool} $plan
+ */
+function novamira_uninstall_current_site(array $plan): void
 {
     $wpdb = novamira_uninstall_wpdb();
 
-    $chat_table = $wpdb->prefix . 'novamira_chat_sessions';
-    $wpdb->query("DROP TABLE IF EXISTS {$chat_table}");
+    if ($plan['delete_chat_sessions']) {
+        novamira_uninstall_drop_table($wpdb->prefix . 'novamira_chat_sessions');
 
-    delete_option('novamira_chat_schema_version');
-    delete_option('novamira_chat_sessions');
+        delete_option('novamira_chat_schema_version');
+        delete_option('novamira_chat_sessions');
+    }
 
-    if ($delete_oauth) {
+    if ($plan['delete_user_skills']) {
+        novamira_uninstall_post_type('novamira_skill');
+    }
+
+    if ($plan['delete_memories']) {
+        novamira_uninstall_post_type('novamira_memory');
+    }
+
+    if ($plan['delete_oauth']) {
         foreach (novamira_uninstall_oauth_tables() as $table) {
-            $wpdb->query("DROP TABLE IF EXISTS {$table}");
+            novamira_uninstall_drop_table($table);
         }
 
         delete_option('novamira_oauth_schema_version');
@@ -51,6 +68,29 @@ function novamira_uninstall_current_site(bool $delete_oauth): void
     }
 
     wp_clear_scheduled_hook('novamira_oauth_gc');
+}
+
+function novamira_uninstall_post_type(string $post_type): void
+{
+    $wpdb = novamira_uninstall_wpdb();
+    $query = $wpdb->prepare('SELECT ID FROM %i WHERE post_type = %s', $wpdb->posts, $post_type);
+    if (!is_string($query)) {
+        return;
+    }
+
+    $post_ids = $wpdb->get_col($query);
+    foreach (array_map('intval', $post_ids) as $post_id) {
+        wp_delete_post($post_id, force_delete: true);
+    }
+}
+
+function novamira_uninstall_drop_table(string $table): void
+{
+    $wpdb = novamira_uninstall_wpdb();
+    $query = $wpdb->prepare('DROP TABLE IF EXISTS %i', $table);
+    if (is_string($query)) {
+        $wpdb->query($query);
+    }
 }
 
 /**
@@ -81,9 +121,9 @@ function novamira_uninstall_wpdb(): wpdb
 function novamira_uninstall_application_passwords(): void
 {
     $wpdb = novamira_uninstall_wpdb();
-    // @mago-expect analysis:possibly-invalid-argument -- $wpdb->usermeta is WordPress' users table.
     $query = $wpdb->prepare(
-        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = %s",
+        'SELECT user_id FROM %i WHERE meta_key = %s',
+        $wpdb->usermeta,
         WP_Application_Passwords::USERMETA_KEY_APPLICATION_PASSWORDS,
     );
     if (!is_string($query)) {
@@ -129,12 +169,12 @@ if (is_multisite()) {
     // @mago-expect analysis:mixed-assignment
     foreach ($site_ids as $site_id) {
         switch_to_blog((int) $site_id);
-        novamira_uninstall_current_site($novamira_uninstall_plan['delete_oauth']);
+        novamira_uninstall_current_site($novamira_uninstall_plan);
         restore_current_blog();
     }
     delete_site_option(NOVAMIRA_UNINSTALL_PLAN_OPTION);
     return;
 }
 
-novamira_uninstall_current_site($novamira_uninstall_plan['delete_oauth']);
+novamira_uninstall_current_site($novamira_uninstall_plan);
 delete_site_option(NOVAMIRA_UNINSTALL_PLAN_OPTION);
