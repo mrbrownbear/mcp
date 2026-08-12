@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Shutdown handler that creates a .crashed marker when a fatal error occurs while a sandbox file is loading.
+ * Shutdown handler that creates a .crashed marker when PHP terminates while a sandbox file is loading.
  *
  * @param string      $crashed_file        Path to the .crashed marker file.
  * @param string|null $current_sandbox_file The sandbox file currently being loaded, or null if loading is complete.
@@ -27,13 +27,13 @@ function novamira_sandbox_crash_handler(string $crashed_file, ?string $current_s
     }
 
     $error = error_get_last();
-    if ($error === null) {
-        return;
-    }
-
-    // Only react to fatal error types that kill execution.
-    if (!($error['type'] & (E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR))) {
-        return;
+    if ($error === null || !($error['type'] & (E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR))) {
+        $error = [
+            'type' => 0,
+            'message' => 'Sandbox file terminated PHP during loading.',
+            'file' => $current_sandbox_file,
+            'line' => 0,
+        ];
     }
 
     $error['sandbox_file'] = $current_sandbox_file;
@@ -48,20 +48,14 @@ function novamira_sandbox_crash_handler(string $crashed_file, ?string $current_s
         return;
     }
 
-    $loading_file = $sandbox_dir . '.loading';
-    $crashed_file = $sandbox_dir . '.crashed';
-    $abilities_enabled = novamira_is_enabled();
-
-    // When abilities are disabled, load sandbox files without crash-recovery overhead.
-    if (!$abilities_enabled) {
-        $files = glob($sandbox_dir . '*.php');
-        if ($files) {
-            foreach ($files as $file) {
-                require_once $file;
-            }
-        }
+    // WordPress includes a plugin once in a sandboxed probe before activation. Loading generated
+    // extensions there lets one stale exit(), redirect, or request-method guard block Novamira itself.
+    if (defined('WP_SANDBOX_SCRAPING') && constant('WP_SANDBOX_SCRAPING') === true) {
         return;
     }
+
+    $loading_file = $sandbox_dir . '.loading';
+    $crashed_file = $sandbox_dir . '.crashed';
 
     // Clean up legacy .loading marker if present.
     if (file_exists($loading_file)) {
