@@ -402,6 +402,10 @@ function rest_claim_next_batch(): WP_REST_Response|WP_Error
 function rest_claim_next_item(WP_REST_Request $request): WP_REST_Response|WP_Error
 {
     $params = rest_json_params($request);
+    if (is_wp_error($params)) {
+        return rest_response($params);
+    }
+
     $lease_owner = is_scalar($params['lease_owner'] ?? null) ? (string) $params['lease_owner'] : '';
 
     return rest_response(claim_next_item(rest_int_param($request, name: 'batch_id'), $lease_owner));
@@ -471,6 +475,10 @@ function rest_item_editor_url(WP_Post $item): string|WP_Error
 function rest_complete_item(WP_REST_Request $request): WP_REST_Response|WP_Error
 {
     $params = rest_json_params($request);
+    if (is_wp_error($params)) {
+        return rest_response($params);
+    }
+
     $lease_owner = is_scalar($params['lease_owner'] ?? null) ? (string) $params['lease_owner'] : '';
     $content = is_scalar($params['content'] ?? null) ? (string) $params['content'] : '';
 
@@ -486,6 +494,10 @@ function rest_complete_item(WP_REST_Request $request): WP_REST_Response|WP_Error
 function rest_fail_item(WP_REST_Request $request): WP_REST_Response|WP_Error
 {
     $params = rest_json_params($request);
+    if (is_wp_error($params)) {
+        return rest_response($params);
+    }
+
     $lease_owner = is_scalar($params['lease_owner'] ?? null) ? (string) $params['lease_owner'] : '';
     $message = is_scalar($params['message'] ?? null) ? (string) $params['message'] : '';
 
@@ -504,11 +516,19 @@ function rest_cancel_batch(WP_REST_Request $request): WP_REST_Response|WP_Error
 }
 
 /**
- * @return array<string, mixed>
+ * @return array<string, mixed>|WP_Error
  */
-function rest_json_params(WP_REST_Request $request): array
+function rest_json_params(WP_REST_Request $request): array|WP_Error
 {
     $raw_params = $request->get_json_params();
+    // @mago-expect analysis:redundant-type-comparison -- The WordPress stub is narrower than the runtime contract.
+    // @mago-expect analysis:impossible-condition -- The WordPress stub is narrower than the runtime contract.
+    if (!is_array($raw_params)) {
+        return new WP_Error('rest_missing_json_body', 'Send a JSON object body with Content-Type: application/json.', [
+            'status' => 400,
+        ]);
+    }
+
     $params = array_filter(
         $raw_params,
         static fn(mixed $value, mixed $key): bool => is_string($key),
