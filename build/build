@@ -48,7 +48,10 @@ fi
 # the zip independent of the existing ignored vendor tree and leaves the
 # development installation untouched.
 COMPOSER_VENDOR_DIR="$BUILD_DIR/vendor" composer install --no-dev --optimize-autoloader --no-interaction
-rm -rf "$BUILD_DIR/vendor/php-stubs" "$BUILD_DIR/vendor/bin"
+rm -rf "$BUILD_DIR/vendor/php-stubs"
+# Every bin directory, not just vendor/bin: packages ship their own CLI scripts
+# (defuse/php-encryption/bin, ...) and none of them are used at runtime.
+find "$BUILD_DIR/vendor" -type d -name bin -prune -exec rm -rf {} +
 
 # Remove empty directories
 find "$BUILD_DIR" -type d -empty -delete
