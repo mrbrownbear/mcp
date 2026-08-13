@@ -638,7 +638,7 @@ function check_registration(): array
                 domain: 'novamira',
             ),
             __(
-                'Run the diagnostics again in an hour. If an AI client reports "too many attempts", wait an hour or create a manual client ID that skips registration entirely.',
+                'If an AI client reports "too many attempts", clear the limits from the registration-error symptom below, then connect it once.',
                 domain: 'novamira',
             ),
             action: 'registration',
@@ -917,7 +917,10 @@ function check_limits(): array
                 $active,
                 $cap,
             ),
-            __('Revoke unused connections from the Manage Connections page.', domain: 'novamira'),
+            __(
+                'Revoke unused connections from the Manage Connections page: each one frees its slot right away. A site that genuinely runs more simultaneous connections can raise the cap with the novamira_oauth_max_clients filter.',
+                domain: 'novamira',
+            ),
         );
     }
     if ($pending >= 5) {
@@ -933,7 +936,7 @@ function check_limits(): array
                 $pending,
             ),
             __(
-                'Wait for the cleanup, or create a manual client ID that skips registration entirely (admin-created IDs bypass these limits).',
+                'Clear them from the registration-error symptom below, then connect the client once.',
                 domain: 'novamira',
             ),
             action: 'registration',

@@ -65,6 +65,7 @@ function novamira_uninstall_current_site(array $plan): void
         delete_option('novamira_oauth_private_key');
         delete_option('novamira_oauth_public_key');
         delete_option('novamira_oauth_encryption_key');
+        delete_option('novamira_oauth_dcr_epoch');
     }
 
     wp_clear_scheduled_hook('novamira_oauth_gc');

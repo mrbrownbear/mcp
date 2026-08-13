@@ -188,19 +188,51 @@ function is_loopback_ip(string $ip): bool
     return false;
 }
 
+const RATE_LIMIT_EPOCH_OPTION = 'novamira_oauth_dcr_epoch';
+
+/**
+ * Counter generation, part of every DCR transient key. Bumping it retires every per-IP counter at
+ * once, which is how the reset clears the hourly limits: the keys cannot be enumerated (with a
+ * persistent object cache they are not rows in wp_options at all), so the alternative would be
+ * flushing the whole site cache to release one counter. The retired transients expire on their own.
+ */
+function rate_limit_epoch(): int
+{
+    return (int) get_option(RATE_LIMIT_EPOCH_OPTION, default_value: 0);
+}
+
 /**
  * Increments a per-IP DCR counter (SHA-256 of IP, stored in WP transient).
  * Returns false if the hourly cap is already reached.
  */
 function check_and_increment_rate_limit(string $client_ip): bool
 {
-    $key = 'novamira_oauth_dcr_' . hash('sha256', $client_ip);
+    $key = 'novamira_oauth_dcr_' . rate_limit_epoch() . '_' . hash('sha256', $client_ip);
     $current = (int) get_transient($key);
     if ($current >= DCR_RATE_LIMIT_PER_HOUR) {
         return false;
     }
     set_transient($key, $current + 1, HOUR_IN_SECONDS);
     return true;
+}
+
+/**
+ * Clear the registration limits an administrator can be locked out by: the hourly per-IP budget and
+ * the registrations that never completed sign-in, which occupy the per-IP client allowance until
+ * they age out. Live connections are left alone, so this is safe to run while clients are connected.
+ * Returns how many incomplete registrations were removed.
+ */
+// @mago-expect lint:no-global
+// WordPress core requires global $wpdb for database access.
+function reset_registration_limits(): int
+{
+    update_option(RATE_LIMIT_EPOCH_OPTION, rate_limit_epoch() + 1, autoload: true);
+
+    global $wpdb;
+    /** @var \wpdb $wpdb */
+    $deleted = $wpdb->query("DELETE FROM {$wpdb->prefix}novamira_oauth_clients
+         WHERE last_used_at IS NULL AND admin_created = 0");
+    return is_int($deleted) ? $deleted : 0;
 }
 
 const ENDPOINT_RATE_LIMIT_PER_MINUTE = 30;

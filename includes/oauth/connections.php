@@ -122,6 +122,9 @@ function handle_post(int $user_id): void
     $client_id = is_string($raw) ? sanitize_key($raw) : '';
     if ($client_id !== '') {
         revoke_client_access($client_id, $user_id);
+        if (load_client_repository()) {
+            (new \Novamira\OAuth\Repositories\ClientRepository())->delete_if_unused($client_id);
+        }
     }
 
     wp_redirect(add_query_arg(['revoked' => '1'], page_url()));
@@ -346,7 +349,7 @@ function render_admin_clients_section(): void
     echo
         '<p>'
             . esc_html__(
-                'Created from the connection troubleshooter to bypass a failing automatic registration. Each stays valid until used or deleted here.',
+                'Client IDs issued by hand rather than by automatic registration. Each stays valid until deleted here.',
                 domain: 'novamira',
             )
             . '</p>'

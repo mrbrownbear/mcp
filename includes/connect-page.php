@@ -1271,7 +1271,7 @@ function novamira_render_connect_client_section(
 }
 
 /**
- * Render the "Step 3 — Application Password" card.
+ * Render the Application Password card, shown inside Step 3 once that method is chosen.
  *
  * Just the generate button (with a collapsible name input) and a success notice after generation.
  * The list of existing passwords lives in the separate manage section at the bottom of the page.

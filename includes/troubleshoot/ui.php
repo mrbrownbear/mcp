@@ -13,9 +13,9 @@ if (!defined('ABSPATH')) {
 
 /**
  * Render the troubleshooter panel: a run-checks report and a symptom picker with targeted
- * remedies (including the Auth Client ID generator). The Connect page's Step 4 is its single
- * home (one canonical place to debug a connection); $context prefixes the container id in case
- * another host ever needs it.
+ * remedies. The Troubleshoot page is its single home (one canonical place to debug a connection),
+ * and the Configuration page links there; $context prefixes the container id in case another host
+ * ever needs it.
  *
  * $method scopes checks and symptoms to one connection method ('oauth' or 'password'). Pass ''
  * when the method is chosen at runtime — the Connect page keeps the attribute in sync with its
@@ -108,6 +108,26 @@ function render_panel(string $context, string $method = '', bool $with_method_pi
             </select>
 
             <div class="novamira-ts-branch" data-novamira-ts-branch="registration" hidden>
+                <p><?php esc_html_e(
+                    'Adding an OAuth Client ID in the connector settings does not resolve this. That field expects an ID issued by this site, and providing one changes nothing about what is failing: the requests are refused before they reach WordPress. In our testing the cause is on the hosting or CDN layer every time, so the two options here are what restore the connection.',
+                    domain: 'novamira',
+                ); ?></p>
+
+                <div class="novamira-ts-reset">
+                    <p><?php esc_html_e(
+                        'If the client reports too many attempts, its repeated tries have filled this site’s registration limits. Clearing them takes effect immediately and leaves connected clients untouched.',
+                        domain: 'novamira',
+                    ); ?></p>
+                    <form method="post">
+                        <?php wp_nonce_field('novamira_troubleshoot_reset_limits'); ?>
+                        <input type="hidden" name="novamira_action" value="reset_registration_limits">
+                        <button type="submit" class="button"><?php esc_html_e(
+                            'Reset registration limits',
+                            domain: 'novamira',
+                        ); ?></button>
+                    </form>
+                </div>
+
                 <h3><?php esc_html_e('Choose the fix your AI client supports', domain: 'novamira'); ?></h3>
                 <div class="novamira-ts-fix-options">
                     <div class="novamira-ts-fix-option is-recommended">
@@ -182,7 +202,7 @@ function render_panel(string $context, string $method = '', bool $with_method_pi
 
             <div class="novamira-ts-branch" data-novamira-ts-branch="no-tools" hidden>
                 <p><?php esc_html_e(
-                    'The checks above already verify everything the server can see for this, including that AI Abilities are turned on. What the server cannot see is the client side: make sure the client points at the exact server URL from Step 3 — the OAuth URL and the Application Password URL are different endpoints — and restart the client so it reloads the server list.',
+                    'The checks above already verify everything the server can see for this, including that AI Abilities are turned on. What the server cannot see is the client side: make sure the client points at the exact server URL from Step 4 — the OAuth URL and the Application Password URL are different endpoints — and restart the client so it reloads the server list.',
                     domain: 'novamira',
                 ); ?></p>
             </div>
@@ -270,6 +290,12 @@ function render_assets_once(): void
         background: rgba(0, 0, 0, 0.04); font-size: 13px; line-height: 1.55; color: #3c434a;
     }
     .novamira-ts-remedy .button { display: inline-block; margin-top: 8px; }
+    .novamira-ts-reset {
+        margin: 12px 0 4px; padding: 12px 14px; border-radius: 6px;
+        background: #fff; border: 1px solid #e5e5e7;
+    }
+    .novamira-ts-reset p { margin: 0 0 10px; font-size: 13px; line-height: 1.55; color: #50575e; }
+    .novamira-ts-reset form { margin: 0; }
     .novamira-ts-copy { margin-top: 8px; }
     .novamira-ts-copy-text {
         margin: 0; padding: 10px 12px; border-radius: 4px;

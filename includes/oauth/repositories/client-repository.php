@@ -167,6 +167,40 @@ final class ClientRepository implements ClientRepositoryInterface
     }
 
     /**
+     * Drop a client that no user is connected through any more, so revoking a connection frees its
+     * slot immediately instead of leaving the row to occupy one until it ages out. The live-token
+     * test spans every user, since a revoke only covers the user who asked for it and the same
+     * client_id may still carry another user's connection. Manually created IDs are exempt: they
+     * are deleted from Connections by hand, the same way prune_dead_clients() leaves them alone.
+     */
+    // @mago-expect lint:no-global
+    // WordPress core requires global $wpdb for database access.
+    public function delete_if_unused(string $client_id): void
+    {
+        global $wpdb;
+        /** @var \wpdb $wpdb */
+        $t = $wpdb->prefix . 'novamira_oauth_access_tokens';
+        $r = $wpdb->prefix . 'novamira_oauth_refresh_tokens';
+        // @mago-expect analysis:possibly-invalid-argument
+        // @mago-expect analysis:possibly-invalid-argument
+        $live = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*)
+               FROM `{$r}` rt
+               JOIN `{$t}` at ON at.identifier_hash = rt.access_token_hash
+              WHERE at.client_id = %s AND rt.revoked = 0 AND rt.expires_at > %s",
+            $client_id,
+            gmdate('Y-m-d H:i:s'),
+        ));
+        if ($live > 0) {
+            return;
+        }
+        $wpdb->delete($wpdb->prefix . 'novamira_oauth_clients', [
+            'client_id' => $client_id,
+            'admin_created' => 0,
+        ]);
+    }
+
+    /**
      * @return list<array{client_id: string, client_name: string, created_at: string, last_used_at: string|null}>
      */
     public function list_recent(int $limit = 50): array

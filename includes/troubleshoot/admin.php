@@ -20,7 +20,7 @@ const PAGE_SLUG = 'novamira-troubleshoot';
  */
 function register_menu(): void
 {
-    add_submenu_page(
+    $hook = add_submenu_page(
         parent_slug: 'novamira-connect',
         page_title: __('Troubleshoot', domain: 'novamira'),
         menu_title: __('Troubleshoot', domain: 'novamira'),
@@ -28,6 +28,46 @@ function register_menu(): void
         menu_slug: PAGE_SLUG,
         callback: __NAMESPACE__ . '\\render_page',
     );
+
+    // The reset POST redirects, so it has to run before any admin HTML is sent. The page callback
+    // fires after the admin header, where wp_redirect() is already a no-op.
+    if (is_string($hook) && $hook !== '') {
+        add_action('load-' . $hook, __NAMESPACE__ . '\\handle_load');
+    }
+}
+
+function page_url(): string
+{
+    return admin_url('admin.php?page=' . PAGE_SLUG);
+}
+
+/**
+ * Handle the "Reset registration limits" POST. The limits exist to keep anonymous registration from
+ * being flooded, and an administrator reaching this page is on the other side of that door: their
+ * own session is never rate limited, so they can always clear a lockout their AI client cannot.
+ */
+function handle_load(): void
+{
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        return;
+    }
+    if (($_POST['novamira_action'] ?? '') !== 'reset_registration_limits') {
+        return;
+    }
+    if (!is_user_logged_in() || !\novamira_current_user_can_manage()) {
+        return;
+    }
+    check_admin_referer('novamira_troubleshoot_reset_limits');
+
+    // The OAuth endpoints are only registered while AI Abilities are on, and with them off there is
+    // no limit to clear (see Novamira\OAuth\boot).
+    if (!function_exists('Novamira\\OAuth\\ClientValidation\\reset_registration_limits')) {
+        return;
+    }
+    $removed = \Novamira\OAuth\ClientValidation\reset_registration_limits();
+
+    wp_redirect(add_query_arg(['limits_reset' => '1', 'removed' => $removed], page_url()));
+    exit();
 }
 
 /**
@@ -64,6 +104,30 @@ function detect_connection_method(): string
     return '';
 }
 
+/** Confirmation shown after handle_load() redirects back, so the reset reports what it freed. */
+function render_reset_notice(): void
+{
+    $raw = $_GET['limits_reset'] ?? null;
+    if (!is_string($raw) || $raw !== '1') {
+        return;
+    }
+    $removed = (int) ($_GET['removed'] ?? 0);
+    echo '<div class="notice notice-success is-dismissible"><p>';
+    echo
+        esc_html(sprintf(
+            /* translators: %d: number of incomplete registrations that were removed */
+            _n(
+                single: 'Registration limits reset. %d incomplete registration was removed. Connect your AI client once now: each further attempt starts filling the limits again.',
+                plural: 'Registration limits reset. %d incomplete registrations were removed. Connect your AI client once now: each further attempt starts filling the limits again.',
+                number: $removed,
+                domain: 'novamira',
+            ),
+            $removed,
+        ))
+    ;
+    echo '</p></div>';
+}
+
 function render_page(): void
 {
     if (!\novamira_current_user_can_manage()) {
@@ -81,6 +145,7 @@ function render_page(): void
             'Run these checks when an AI client cannot connect. They probe this site the way a client does and point at what to fix.',
             domain: 'novamira',
         ); ?></p>
+        <?php render_reset_notice(); ?>
         <?php \Novamira\Troubleshoot\UI\render_panel(
             context: 'troubleshoot',
             method: $method,
