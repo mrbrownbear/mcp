@@ -1,5 +1,6 @@
 * Fix: Anything a sandbox file prints while it loads is now discarded instead of being added to the response being built at the time. A single leftover debug line in a sandbox file used to appear ahead of the JSON on the MCP and OAuth endpoints, which broke every AI client's connection with a parse error, and showed up on front-end pages and admin screens too. With WP_DEBUG on, the discarded text is written to the PHP error log along with the file that printed it.
 * Fix: A sandbox file that stops with an error no longer ends the whole request. The remaining sandbox files still load, WordPress finishes loading, and safe mode switches on from the next request as before — where previously one broken sandbox file could surface as an unrelated fatal error elsewhere in WordPress.
+* Fix: AI clients that support both device authorization and browser sign-in, such as Visual Studio Code, can now connect over OAuth. They were registered as device-only clients, which discarded the redirect address they needed and left them refused at sign-in with "This application is registered for device authorization."
 
 v1.11.4 - 2026/08/13
 * New: Before deactivating Novamira, the review page now shows stored Novamira Pro memories, user-added skills, and Chat sessions. Choose whether to preserve or permanently delete each data type when removing the plugin.

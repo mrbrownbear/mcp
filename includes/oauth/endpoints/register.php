@@ -74,6 +74,30 @@ function register_device_client(string $client_name, string $client_ip): WP_REST
 }
 
 /**
+ * Whether a registration request describes a device-authorization client.
+ *
+ * A client advertises every grant it supports, so device_code on its own does not make one
+ * device-only: VS Code lists it next to authorization_code and supplies the loopback redirect_uri
+ * that second grant needs, and registering it as device-only threw that URI away and left it unable
+ * to authorize at all. Answer true only when the client could not run the authorization code flow
+ * regardless, having asked for neither that grant nor a redirect_uri to send the user back to.
+ *
+ * @param mixed $requested_grants The request's `grant_types`, still unvalidated.
+ * @param mixed $redirect_uris    The request's `redirect_uris`, still unvalidated.
+ */
+function is_device_only_registration(mixed $requested_grants, mixed $redirect_uris): bool
+{
+    $grants = is_array($requested_grants) ? $requested_grants : [];
+    if (!in_array(\Novamira\OAuth\DEVICE_CODE_GRANT_TYPE, $grants, strict: true)) {
+        return false;
+    }
+
+    $has_redirect_uris = is_array($redirect_uris) && $redirect_uris !== [];
+
+    return !in_array('authorization_code', $grants, strict: true) || !$has_redirect_uris;
+}
+
+/**
  * Per-IP and per-site limits on anonymous registration, applied before anything is written. Returns
  * the refusal to send, or null when the registration may proceed.
  */
@@ -117,16 +141,13 @@ function handle(WP_REST_Request $req): WP_REST_Response|WP_Error
 
     // @mago-expect analysis:mixed-assignment
     $requested_grants = $body['grant_types'] ?? null;
-    $device_client =
-        is_array($requested_grants)
-        && in_array(\Novamira\OAuth\DEVICE_CODE_GRANT_TYPE, $requested_grants, strict: true);
+    // @mago-expect analysis:mixed-assignment
+    $redirect_uris = $body['redirect_uris'] ?? null;
 
-    if ($device_client) {
+    if (is_device_only_registration($requested_grants, $redirect_uris)) {
         return register_device_client($client_name, $client_ip);
     }
 
-    // @mago-expect analysis:mixed-assignment
-    $redirect_uris = $body['redirect_uris'] ?? null;
     if (!is_array($redirect_uris) || $redirect_uris === []) {
         return new WP_Error('invalid_request', 'redirect_uris must be a non-empty array', ['status' => 400]);
     }
