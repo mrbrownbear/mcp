@@ -26,6 +26,21 @@ function wp_json_encode(mixed $value): string|false
     return json_encode($value);
 }
 
+// Stands in for a response that is already being buffered while sandbox files load: WordPress and
+// several hosts keep an output buffer open across the request. The loader must leave that buffer,
+// and only that buffer, exactly as it found it.
+$buffered = $argv[2] === 'buffered-request';
+if ($buffered) {
+    ob_start();
+    echo 'response-body';
+}
+
 require dirname(__DIR__, 2) . '/includes/sandbox-loader.php';
+
+if ($buffered) {
+    $level = ob_get_level();
+    $body = $level > 0 ? (string) ob_get_clean() : '<<outer-buffer-destroyed>>';
+    echo $body . '|ob-level:' . $level . '|';
+}
 
 echo 'runner-complete';

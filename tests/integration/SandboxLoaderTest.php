@@ -61,6 +61,39 @@ final class SandboxLoaderTest extends TestCase
         self::assertSame('runner-complete', $secondOutput);
     }
 
+    public function testStrayOutputFromASandboxFileStaysOutOfTheResponse(): void
+    {
+        file_put_contents($this->sandboxDirectory . '/extension.php', "<?php echo 'File OK: 42 chars';");
+
+        [$output, $exitCode] = $this->runLoader('request');
+
+        self::assertSame(0, $exitCode);
+        self::assertSame('runner-complete', $output);
+    }
+
+    public function testSandboxFileLeavingAnOutputBufferOpenDoesNotSwallowTheResponse(): void
+    {
+        file_put_contents(
+            $this->sandboxDirectory . '/extension.php',
+            "<?php ob_start(); echo 'leftover';",
+        );
+
+        [$output, $exitCode] = $this->runLoader('buffered-request');
+
+        self::assertSame(0, $exitCode);
+        self::assertSame('response-body|ob-level:1|runner-complete', $output);
+    }
+
+    public function testSandboxFileClosingABufferItDidNotOpenDoesNotDestroyTheResponse(): void
+    {
+        file_put_contents($this->sandboxDirectory . '/extension.php', '<?php ob_end_clean();');
+
+        [$output, $exitCode] = $this->runLoader('buffered-request');
+
+        self::assertSame(0, $exitCode);
+        self::assertSame('response-body|ob-level:1|runner-complete', $output);
+    }
+
     public function testThrowableFromOneFileDoesNotStopTheOthersOrTheRequest(): void
     {
         file_put_contents($this->sandboxDirectory . '/a-throws.php', "<?php throw new \\Error('boom');");

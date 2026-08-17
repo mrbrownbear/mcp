@@ -1,3 +1,4 @@
+* Fix: Anything a sandbox file prints while it loads is now discarded instead of being added to the response being built at the time. A single leftover debug line in a sandbox file used to appear ahead of the JSON on the MCP and OAuth endpoints, which broke every AI client's connection with a parse error, and showed up on front-end pages and admin screens too. With WP_DEBUG on, the discarded text is written to the PHP error log along with the file that printed it.
 * Fix: A sandbox file that stops with an error no longer ends the whole request. The remaining sandbox files still load, WordPress finishes loading, and safe mode switches on from the next request as before — where previously one broken sandbox file could surface as an unrelated fatal error elsewhere in WordPress.
 
 v1.11.4 - 2026/08/13

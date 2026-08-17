@@ -28,6 +28,54 @@ function novamira_sandbox_write_crash_marker(string $crashed_file, string $sandb
 }
 
 /**
+ * Loads one sandbox file, keeping what it prints and how it fails to itself.
+ *
+ * Locals here are prefixed because the required file shares this scope and its own top-level
+ * variables would otherwise be free to overwrite the buffer bookkeeping below.
+ *
+ * @param string $crashed_file Path to the .crashed marker file.
+ * @param string $file         The sandbox file to load.
+ */
+function novamira_sandbox_load_file(string $crashed_file, string $file): void
+{
+    // Sandbox files exist to register hooks and functions, not to print while being required.
+    // Nothing used to contain what they printed anyway, so one leftover `echo` landed in whatever
+    // response happened to be building — and these files load on every request, so that meant
+    // front-end pages, admin screens, and the REST/MCP JSON that AI clients parse from byte zero
+    // alike. Give each file its own buffer and throw away what it prints.
+    $novamira_ob_level = ob_get_level();
+    ob_start();
+
+    try {
+        require_once $file;
+    } catch (\Throwable $novamira_error) {
+        // Keep one broken file from ending the request: arm safe mode for the next request, then
+        // carry on with the remaining sandbox files and the rest of WordPress's bootstrap. A failure
+        // `require_once` cannot survive is not catchable here and still reaches the shutdown handler.
+        novamira_sandbox_write_crash_marker($crashed_file, $file, [
+            'type' => E_ERROR,
+            'message' => $novamira_error->getMessage(),
+            'file' => $novamira_error->getFile(),
+            'line' => $novamira_error->getLine(),
+        ]);
+    }
+
+    // Unwind only the levels this call opened. A sandbox file may leave a buffer of its own open, or
+    // close one it never opened, and a bare ob_end_clean() would then delete a buffer belonging to
+    // WordPress or the host — discarding the very response this is meant to keep clean. A file that
+    // serves its own response and calls exit() never arrives here at all: PHP flushes its buffered
+    // output at shutdown, so that pattern still works.
+    $novamira_printed = '';
+    while (ob_get_level() > $novamira_ob_level) {
+        $novamira_printed = (string) ob_get_clean() . $novamira_printed;
+    }
+
+    if ($novamira_printed !== '' && defined('WP_DEBUG') && constant('WP_DEBUG') === true) {
+        error_log(sprintf('Novamira Sandbox: discarded output printed while loading %s: %s', $file, $novamira_printed));
+    }
+}
+
+/**
  * Shutdown handler that creates a .crashed marker when PHP terminates while a sandbox file is loading.
  *
  * Only a failure that `require_once` cannot survive reaches this — out of memory, a parse error, a
@@ -131,21 +179,7 @@ function novamira_sandbox_crash_handler(string $crashed_file, ?string $current_s
 
     foreach ($files as $file) {
         $current_sandbox_file = $file;
-
-        try {
-            require_once $file;
-        } catch (\Throwable $e) {
-            // Keep one broken file from ending the request: arm safe mode for the next request, then
-            // carry on with the remaining sandbox files and the rest of WordPress's bootstrap. A
-            // failure `require_once` cannot survive is not catchable here and still reaches the
-            // shutdown handler above.
-            novamira_sandbox_write_crash_marker($crashed_file, $file, [
-                'type' => E_ERROR,
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-            ]);
-        }
+        novamira_sandbox_load_file($crashed_file, $file);
     }
     $current_sandbox_file = null;
 })();
