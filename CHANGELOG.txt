@@ -1,3 +1,5 @@
+* Fix: A sandbox file that stops with an error no longer ends the whole request. The remaining sandbox files still load, WordPress finishes loading, and safe mode switches on from the next request as before — where previously one broken sandbox file could surface as an unrelated fatal error elsewhere in WordPress.
+
 v1.11.4 - 2026/08/13
 * New: Before deactivating Novamira, the review page now shows stored Novamira Pro memories, user-added skills, and Chat sessions. Choose whether to preserve or permanently delete each data type when removing the plugin.
 * New: AI clients can now discover which Gutenberg block types a site has registered and read each block's attribute schema, supports, and nesting constraints before composing content, instead of finding out about a wrong block name or attribute only when a Block Editor Queue batch fails.

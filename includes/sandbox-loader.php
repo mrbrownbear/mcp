@@ -15,7 +15,23 @@ if (!defined('ABSPATH')) {
 }
 
 /**
+ * Writes the .crashed marker, which keeps sandbox files in safe mode from the next request onward.
+ *
+ * @param string               $crashed_file Path to the .crashed marker file.
+ * @param string               $sandbox_file The sandbox file that failed.
+ * @param array<string, mixed> $error        Error details (type, message, file, line).
+ */
+function novamira_sandbox_write_crash_marker(string $crashed_file, string $sandbox_file, array $error): void
+{
+    $error['sandbox_file'] = $sandbox_file;
+    file_put_contents($crashed_file, (string) wp_json_encode($error), LOCK_EX);
+}
+
+/**
  * Shutdown handler that creates a .crashed marker when PHP terminates while a sandbox file is loading.
+ *
+ * Only a failure that `require_once` cannot survive reaches this — out of memory, a parse error, a
+ * timeout. A thrown Throwable does not: the load loop below catches it and the request continues.
  *
  * @param string      $crashed_file        Path to the .crashed marker file.
  * @param string|null $current_sandbox_file The sandbox file currently being loaded, or null if loading is complete.
@@ -36,8 +52,7 @@ function novamira_sandbox_crash_handler(string $crashed_file, ?string $current_s
         ];
     }
 
-    $error['sandbox_file'] = $current_sandbox_file;
-    file_put_contents($crashed_file, (string) wp_json_encode($error), LOCK_EX);
+    novamira_sandbox_write_crash_marker($crashed_file, $current_sandbox_file, $error);
 }
 
 (static function () {
@@ -116,7 +131,21 @@ function novamira_sandbox_crash_handler(string $crashed_file, ?string $current_s
 
     foreach ($files as $file) {
         $current_sandbox_file = $file;
-        require_once $file;
+
+        try {
+            require_once $file;
+        } catch (\Throwable $e) {
+            // Keep one broken file from ending the request: arm safe mode for the next request, then
+            // carry on with the remaining sandbox files and the rest of WordPress's bootstrap. A
+            // failure `require_once` cannot survive is not catchable here and still reaches the
+            // shutdown handler above.
+            novamira_sandbox_write_crash_marker($crashed_file, $file, [
+                'type' => E_ERROR,
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+        }
     }
     $current_sandbox_file = null;
 })();
