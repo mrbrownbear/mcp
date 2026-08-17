@@ -1,22 +1,20 @@
 # Contributing
 
-## Before You Start
+## We do not accept pull requests
 
-Every pull request must be linked to an open issue. If one doesn't exist yet, please open an issue first and describe what you want to change or fix.
+Pull requests opened against this repository cannot be merged, so please do not spend time writing code for it. Any pull request will be closed unmerged, however good the change is.
 
-**Wait for issue approval before writing code.** This avoids the situation where you put in effort on a PR that doesn't align with the project's direction and ends up not being merged.
+## What is genuinely useful
 
-## Process
+**Issues.** Bug reports and feature requests are read, and they are how nearly every fix in the changelog started. A good report is worth far more to us than a patch.
 
-1. Open an issue describing the bug or feature
-2. Wait for a maintainer to acknowledge it and give the go-ahead
-3. Fork the repo and create a branch from `main`
-4. Make your changes
-5. Ensure code passes all checks before submitting:
-   ```sh
-   make mago-format
-   make mago-lint
-   make mago-analyze
-   ```
-   These make targets verify that the installed Mago version matches the version locked in `composer.lock` before running Mago.
-6. Open a pull request referencing the issue (e.g. `Closes #123`)
+When reporting a bug, the details that shorten the round trip most:
+
+- Novamira, WordPress, and PHP versions, plus your host if the behaviour looks environment-specific
+- Which AI client you are connecting, and whether over OAuth or an Application Password
+- What you expected, what happened, and the exact error text or log lines
+- What you already ruled out — a plugin conflict test, a fresh reconnect, another site that behaves differently
+
+If you have traced the cause, say so and point at the file and line. That goes straight into the fix, and it is credited in the issue. You are welcome to include a suggested diff in the issue body as illustration — just not as a pull request.
+
+**Security issues** should not be filed as public issues. Email dev@novamira.ai instead.
