@@ -34,12 +34,11 @@ const DEVICE_CODE_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
 /**
  * Canonical identifier of the OAuth-protected MCP resource: the audience minted into every access
  * token (RFC 8707) and validated by the middleware. Derived in one place so the signer and the
- * verifier cannot drift. Matches the server route registered in novamira.php and advertised by the
- * protected-resource metadata.
+ * verifier cannot drift. Matches the public Novamira MCP route and the protected-resource metadata.
  */
 function resource_identifier(): string
 {
-    return rest_url('mcp/novamira-oauth');
+    return rest_url('mcp/novamira');
 }
 
 /**
@@ -151,6 +150,11 @@ function boot(): void
 
     require_once __DIR__ . '/middleware.php';
     Middleware\register();
+
+    // The public MCP endpoint is the canonical OAuth resource. Keep the historic
+    // /mcp/novamira-oauth route working through the original middleware as a compatibility alias.
+    require_once __DIR__ . '/canonical-mcp.php';
+    CanonicalMcp\register();
 
     require_once __DIR__ . '/endpoints/revoke.php';
     add_action('rest_api_init', __NAMESPACE__ . '\\Endpoints\\Revoke\\register');
