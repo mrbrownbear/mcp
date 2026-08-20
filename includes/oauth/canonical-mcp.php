@@ -91,6 +91,22 @@ function authorize_routed_request(mixed $result, mixed $handler, WP_REST_Request
     return $result;
 }
 
+/**
+ * Advertise both RFC 9728's resource_metadata parameter and the resource_metadata_url
+ * compatibility name consumed by @automattic/mcp-wordpress-remote. The latter currently
+ * ignores resource_metadata during 401 discovery.
+ */
+function compatibility_www_authenticate_header(?string $error = null, string $scope = 'mcp'): string
+{
+    $metadata = \Novamira\OAuth\Endpoints\Discovery\protected_resource_metadata_url();
+    $value = 'Bearer resource_metadata="' . $metadata . '"';
+    $value .= ', resource_metadata_url="' . $metadata . '"';
+    if ($error !== null) {
+        $value .= ', error="' . $error . '"';
+    }
+    return $value . ', scope="' . $scope . '"';
+}
+
 function attach_www_authenticate_challenge(
     mixed $response,
     mixed $handler,
@@ -108,12 +124,12 @@ function attach_www_authenticate_challenge(
     $challenge = null;
 
     if ($code === 'rest_oauth_required') {
-        $challenge = \Novamira\OAuth\Middleware\www_authenticate_header(scope: 'mcp');
+        $challenge = compatibility_www_authenticate_header(scope: 'mcp');
     } elseif (
         $code === 'rest_oauth_error'
         && \Novamira\OAuth\Middleware\error_status($response) === 403
     ) {
-        $challenge = \Novamira\OAuth\Middleware\www_authenticate_header('insufficient_scope', 'mcp');
+        $challenge = compatibility_www_authenticate_header('insufficient_scope', 'mcp');
     }
 
     if ($challenge === null) {
