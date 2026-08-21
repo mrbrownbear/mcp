@@ -1,0 +1,64 @@
+name: Live OAuth Check
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe British Lasers OAuth surface
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE='https://britishlasers.com'
+          MCP="$BASE/wp-content/plugins/novamira/novamira-mcp-gateway.php"
+          PRM_PATH="$BASE/.well-known/oauth-protected-resource/wp-content/plugins/novamira/novamira-mcp-gateway.php"
+          PRM_ROOT="$BASE/.well-known/oauth-protected-resource"
+          AS_OAUTH="$BASE/.well-known/oauth-authorization-server"
+          AS_OIDC="$BASE/.well-known/openid-configuration"
+          META="$BASE/wp-content/plugins/novamira/novamira-oauth-metadata.php?type=resource"
+
+          probe() {
+            name="$1"; url="$2"; method="${3:-GET}"
+            echo
+            echo "========== $name =========="
+            echo "URL: $url"
+            rm -f /tmp/h /tmp/b
+            if [ "$method" = POST ]; then
+              curl -sS --max-time 25 --connect-timeout 10 --http1.1 \
+                -X POST -D /tmp/h -o /tmp/b \
+                -H 'User-Agent: ChatGPT-MCP-Diagnostic/1.0' \
+                -H 'Accept: application/json, text/event-stream' \
+                -H 'Content-Type: application/json' \
+                --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"chatgpt-diagnostic","version":"1.0"}}}' \
+                "$url" || true
+            else
+              curl -sS --max-time 25 --connect-timeout 10 --http1.1 \
+                -D /tmp/h -o /tmp/b \
+                -H 'User-Agent: ChatGPT-MCP-Diagnostic/1.0' \
+                -H 'Accept: application/json' \
+                "$url" || true
+            fi
+            echo '--- RESPONSE HEADERS ---'
+            cat /tmp/h 2>/dev/null || true
+            echo '--- RESPONSE BODY (first 5000 bytes) ---'
+            head -c 5000 /tmp/b 2>/dev/null || true
+            echo
+          }
+
+          probe 'MCP GET unauthenticated' "$MCP" GET
+          probe 'MCP POST initialize unauthenticated' "$MCP" POST
+          probe 'PRM resource-specific' "$PRM_PATH" GET
+          probe 'PRM root' "$PRM_ROOT" GET
+          probe 'Authorization server metadata' "$AS_OAUTH" GET
+          probe 'OIDC metadata' "$AS_OIDC" GET
+          probe 'Physical plugin metadata' "$META" GET
+
+          echo
+          echo '========== DNS =========='
+          getent ahostsv4 britishlasers.com || true
